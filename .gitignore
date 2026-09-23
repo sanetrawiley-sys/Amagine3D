@@ -3,6 +3,7 @@ dist/
 .venv/
 .amagine-state/
 .claude/
+.agent/
 plan/
 workspace/*
 !workspace/.gitkeep
