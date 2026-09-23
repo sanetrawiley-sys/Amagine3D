@@ -6,7 +6,7 @@ import unittest
 
 from build123d import Align, Box, Pos, Rot
 
-SKILL = Path(__file__).resolve().parents[2] / "skills" / "text-a3d"
+SKILL = Path(__file__).resolve().parents[2] / "skills" / "a3d-public"
 sys.path.insert(0, str(SKILL))
 from installation_check import check_installation, InstallationCheckError
 from geometry_binding import shape_to_mesh

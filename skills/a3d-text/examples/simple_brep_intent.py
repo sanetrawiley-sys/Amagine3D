@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 import sys
 
-sys.path.insert(0, os.environ["AMAGINE3D_SKILL_DIR"])
+sys.path.insert(0, os.environ["AMAGINE3D_RUNTIME_DIR"])
 from authoring import write_intent
 
 ROOT = Path(__file__).resolve().parent

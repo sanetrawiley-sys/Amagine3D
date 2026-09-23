@@ -1,9 +1,9 @@
 ---
-name: text-a3d
+name: a3d-text
 description: Create or modify printable 3D models and their editable sources.
 ---
 
-# text-a3d
+# a3d-text
 
 Use public `a3d` commands in the session workspace. Keep editable build123d
 BRep source and STEP masters beside derived meshes; intent owns requirements
@@ -90,19 +90,19 @@ longer requires replacing the overall topology.
 ## 3. Finalize the contract and construction
 
 Now resolve printer/nozzle profile, manufacturing mode, topology, interfaces,
-service paths and immutable intent. Use `references/authoring-example.md`; load
-`references/bambu-printability.md` and run `a3d layout` only when volume,
+service paths and immutable intent. Use `$AMAGINE3D_RUNTIME_DIR/references/authoring-example.md`; load
+`$AMAGINE3D_RUNTIME_DIR/references/bambu-printability.md` and run `a3d layout` only when volume,
 orientation or layout matters. Never switch profile or scale requirements to
 clear QA; a larger machine is only an alternative to footprint failure.
 
-For confirmed needs, load `references/multipart-connections.md` for fastening,
-`references/design-review.md` for assembly, or
-`references/installation-checks.md` for purchased components; only then read
+For confirmed needs, load `$AMAGINE3D_RUNTIME_DIR/references/multipart-connections.md` for fastening,
+`$AMAGINE3D_RUNTIME_DIR/references/design-review.md` for assembly, or
+`$AMAGINE3D_RUNTIME_DIR/references/installation-checks.md` for purchased components; only then read
 `examples/installed_module_build.py`.
 
 Build body, cavity and openings from shared datums; complete support, retention
 and access before finishing. Keep missing dimensions reversible. Use
-`references/surface-shell.md` only for loft/finishing drift.
+`$AMAGINE3D_RUNTIME_DIR/references/surface-shell.md` only for loft/finishing drift.
 
 Submit finishing through `BuildSession.finish` with `checked_fillet` or
 `checked_chamfer`, then `export`; never keep unchanged geometry after a failed
@@ -133,7 +133,7 @@ a3d diagnose result.json --id FINDING_ID --field FIELD
 Treat occurrences with the same stable ID or cause across part and plate stages
 as one root cause. Repair its owning datum, parameter, feature or connection.
 Preserve intent; a target change needs a verified parent SHA and reason under
-`references/evidence-contract.md`.
+`$AMAGINE3D_RUNTIME_DIR/references/evidence-contract.md`.
 
 Every expensive repeat must consume new evidence or produce new state:
 
@@ -172,12 +172,12 @@ do not prove global walls; inspect witness scope and stop inside accepted ranges
 
 ## Pull details only for the current problem
 
-- Construction: `a3d guide strategy`, then `references/construction-strategies.md`.
+- Construction: `a3d guide strategy`, then `$AMAGINE3D_RUNTIME_DIR/references/construction-strategies.md`.
 - Motion: `a3d guide pressable-control`.
-- Assembly: `a3d guide multipart`, then `references/multipart-connections.md`.
-- Non-manufactured display: `references/installed-displays.md`.
-- Printed color: `a3d guide color`; uncommon topology: `color/BACKEND.md`.
-- Intent: `references/evidence-contract.md`; compile: `references/cad-compile.md`.
+- Assembly: `a3d guide multipart`, then `$AMAGINE3D_RUNTIME_DIR/references/multipart-connections.md`.
+- Non-manufactured display: `$AMAGINE3D_RUNTIME_DIR/references/installed-displays.md`.
+- Printed color: `a3d guide color`; uncommon topology: `$AMAGINE3D_RUNTIME_DIR/color/BACKEND.md`.
+- Intent: `$AMAGINE3D_RUNTIME_DIR/references/evidence-contract.md`; compile: `$AMAGINE3D_RUNTIME_DIR/references/cad-compile.md`.
 
 Read internals only when public guidance and the error are insufficient. Deliver
 the newest coherent source/report/output set with visual/measured observations

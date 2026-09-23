@@ -17,8 +17,9 @@ from PIL import Image
 import trimesh
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL = ROOT / "skills" / "text-a3d"
-sys.path.insert(0, str(SKILL))
+SKILL = ROOT / "skills" / "a3d-text"
+RUNTIME = ROOT / "skills" / "a3d-public"
+sys.path.insert(0, str(RUNTIME))
 from capability_manifest import build_manifest
 from cad_draft import export_draft
 from tests.python.intent_fixture import write_intent

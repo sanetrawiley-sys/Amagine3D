@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 from build123d import Box, Pos
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'skills/text-a3d'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'skills/a3d-public'))
 import qa_check
 from color import qa_check as color_qa
 from geometry_binding import shape_to_mesh

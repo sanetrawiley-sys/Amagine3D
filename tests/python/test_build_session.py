@@ -16,8 +16,9 @@ import numpy as np
 import trimesh
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL = ROOT / "skills" / "text-a3d"
-sys.path.insert(0, str(SKILL))
+SKILL = ROOT / "skills" / "a3d-text"
+RUNTIME = ROOT / "skills" / "a3d-public"
+sys.path.insert(0, str(RUNTIME))
 from authoring import AuthoringError, paired_interface, write_intent
 from build_session import BuildSession
 import cad_helpers

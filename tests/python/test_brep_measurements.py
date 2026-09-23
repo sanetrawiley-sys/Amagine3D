@@ -18,7 +18,7 @@ from build123d import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "skills" / "text-a3d"))
+sys.path.insert(0, str(ROOT / "skills" / "a3d-public"))
 import brep_measurements as measurements
 import step_check
 from build_manifest import artifact_record

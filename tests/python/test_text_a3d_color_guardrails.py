@@ -22,7 +22,8 @@ import trimesh
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SINGLE = ROOT / "skills" / "text-a3d"
+SINGLE = ROOT / "skills" / "a3d-public"
+TEXT = ROOT / "skills" / "a3d-text"
 COLOR = SINGLE / "color"
 if str(SINGLE) not in sys.path:
     sys.path.insert(0, str(SINGLE))
@@ -1338,7 +1339,7 @@ class ColorContractTests(unittest.TestCase):
         })
 
     def test_flat_semantic_feature_fields_are_validated(self):
-        example_path = SINGLE / "examples" / "intent.example.json"
+        example_path = TEXT / "examples" / "intent.example.json"
         data = json.loads(example_path.read_text())
         self.assertEqual(color_intent.validate(data, example_path.parent), [])
 
@@ -1529,7 +1530,7 @@ class ColorContractTests(unittest.TestCase):
         self.assertEqual(observed["skipped"][0]["feature_id"], "surface-logo")
 
     def test_single_color_contract_accepts_bottom_matched_view(self):
-        example_path = SINGLE / "examples" / "intent.example.json"
+        example_path = TEXT / "examples" / "intent.example.json"
         data = json.loads(example_path.read_text())
         data["visual"] = {
             "required": True,

@@ -197,7 +197,9 @@ Amagine3D/
 │   └── src/                       Codex 适配、稳定事件、沙箱与运行监督
 ├── bin/a3d                         会话安全的 CAD 命令行
 ├── skills/
-│   └── text-a3d/                  精简 CAD 指引与语义场景编译器
+│   ├── a3d-text/                  Agent Skill 入口与示例
+│   │   └── examples/              文本工作流的 intent/build 种子
+│   └── a3d-public/                共享 BRep Python 运行库、references 与 color/
 │       └── color/BACKEND.md       内部颜色分区、材料与 3MF 后端
 ├── bundled-projects/                  工作台内置的只读示例项目
 ├── workspace/sessions/<sessionId>/   生成的源码、模型、报告和预览图
@@ -209,7 +211,7 @@ Amagine3D/
 私有 `@amagine3d/a3d-runtime` package 为每个产品会话启动或恢复一个原生 Codex
 线程，并把 SDK 事件转换成稳定的应用契约。Express 服务端负责产品会话持久化，再将
 这些事件流式传给工作台，本身不再导入 Codex SDK 类型。产品层只增加精简的
-`AGENTS.md` 指引与 `text-a3d` Skill。`a3d` 命令包装已有的 Python 编译、校验、
+`AGENTS.md` 指引与 `a3d-text` Skill。`a3d` 命令包装已有的 Python 编译、校验、
 打包与渲染入口；由 Codex 自主决定何时调用，不再运行服务端自定义修复状态机。
 
 每个会话拥有独立工作区和 Codex 状态目录。可编辑源码、制造文件、报告与预览都保留

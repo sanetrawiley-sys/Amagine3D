@@ -18,7 +18,7 @@ from uuid import UUID
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL = ROOT / "skills" / "text-a3d"
+SKILL = ROOT / "skills" / "a3d-public"
 if str(SKILL) not in sys.path:
     sys.path.insert(0, str(SKILL))
 

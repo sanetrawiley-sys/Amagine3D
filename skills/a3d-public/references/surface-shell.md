@@ -79,7 +79,7 @@ change = np.linalg.solve(jacobian, -proposal_error)
 change *= min(1.0, 2.0 / max(np.max(np.abs(change)), 1e-12))
 ```
 
-Run with `PYTHONPATH="$AMAGINE3D_SKILL_DIR" python3 calibrate.py` in a separate
+Run with `PYTHONPATH="$AMAGINE3D_RUNTIME_DIR" python3 calibrate.py` in a separate
 ordinary process. Never catch a failed managed draft/compile operation and publish
 a later trial as that run's success.
 

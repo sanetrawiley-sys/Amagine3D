@@ -11,7 +11,7 @@ from build123d import Box, BuildPart, BuildSketch, Circle, Plane, Pos, fillet, l
 import numpy as np
 import trimesh
 
-SKILL = Path(__file__).resolve().parents[2] / "skills" / "text-a3d"
+SKILL = Path(__file__).resolve().parents[2] / "skills" / "a3d-public"
 if str(SKILL) not in sys.path:
     sys.path.insert(0, str(SKILL))
 

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "skills" / "text-a3d"))
+sys.path.insert(0, str(ROOT / "skills" / "a3d-public"))
 
 import cad_compile
 from intent_contract import dimension_limits, dimension_measurement_precision_mm, validate

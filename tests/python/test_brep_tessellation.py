@@ -14,7 +14,7 @@ from OCP.TopLoc import TopLoc_Location
 import trimesh
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "skills" / "text-a3d"))
+sys.path.insert(0, str(ROOT / "skills" / "a3d-public"))
 from brep_tessellation import tessellate_brep
 from export_audit import BOUNDS_TOLERANCE_MM, _audit_step, _audit_stl, geometry_record
 from geometry_binding import export_shape_stl

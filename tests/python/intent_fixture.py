@@ -7,7 +7,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL = ROOT / "skills" / "text-a3d"
+SKILL = ROOT / "skills" / "a3d-text"
 PROFILE = SKILL / "examples" / "bambu-a1-mini-0.4-standard.example.json"
 COORDINATE_SYSTEM = {
     "back": "y-max",

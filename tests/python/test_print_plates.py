@@ -7,7 +7,7 @@ import unittest
 import numpy as np
 from build123d import Box, Pos
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "text-a3d"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "a3d-public"))
 import bambu_profile
 import cad_helpers
 from build_manifest import _geometry_errors

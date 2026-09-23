@@ -17,7 +17,7 @@ from build123d import Align, Box, Location, Pos, Vertex
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MODULE_PATH = ROOT / "skills" / "text-a3d" / "interface_recipes.py"
+MODULE_PATH = ROOT / "skills" / "a3d-public" / "interface_recipes.py"
 sys.path.insert(0, str(MODULE_PATH.parent))
 from build_session import BuildSession
 from cad_helpers import BuildInvariantError

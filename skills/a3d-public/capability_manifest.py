@@ -3,7 +3,7 @@
 The manifest is intentionally independent from any requested object.  It gives
 the Agent one compact, version-bound answer about the managed build123d API,
 the repository authoring helpers, and the artifact families supported by the
-single text-a3d surface.  It is advisory context for the existing Agent loop;
+single a3d text skill surface.  It is advisory context for the existing Agent loop;
 it is not a workflow engine and does not select a modeling strategy.
 """
 

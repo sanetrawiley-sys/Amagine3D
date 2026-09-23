@@ -17,7 +17,8 @@ import trimesh
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL = ROOT / "skills" / "text-a3d"
+SKILL = ROOT / "skills" / "a3d-public"
+TEXT = ROOT / "skills" / "a3d-text"
 COLOR = SKILL / "color"
 if str(SKILL) not in sys.path:
     sys.path.insert(0, str(SKILL))
@@ -56,7 +57,7 @@ COORDINATE_SYSTEM = {
 
 
 def _profile_reference() -> dict:
-    path = SKILL / "examples" / "bambu-a1-mini-0.4-standard.example.json"
+    path = TEXT / "examples" / "bambu-a1-mini-0.4-standard.example.json"
     return {"path": str(path), "sha256": sha256(path.read_bytes()).hexdigest()}
 
 
@@ -1602,7 +1603,7 @@ class SingleMaterialAssemblyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             profile_path = (
-                SKILL
+                TEXT
                 / "examples"
                 / "bambu-a1-mini-0.4-standard.example.json"
             )
@@ -2066,7 +2067,7 @@ class SingleMaterialAssemblyTests(unittest.TestCase):
 
 class ContractTests(unittest.TestCase):
     def test_unified_color_regions_allow_multiple_regions_per_multipart_owner(self):
-        example_path = SKILL / "examples" / "intent.example.json"
+        example_path = TEXT / "examples" / "intent.example.json"
         data = json.loads(example_path.read_text(encoding="utf-8"))
         data["manufacturing"] = {
             "mode": "multipart",
@@ -2140,7 +2141,7 @@ class ContractTests(unittest.TestCase):
         attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
         self.assertIn("*.json text eol=lf", attributes.splitlines())
 
-        for skill_dir in (ROOT / "skills" / "text-a3d",):
+        for skill_dir in (TEXT,):
             examples = skill_dir / "examples"
             intent = json.loads(
                 (examples / "intent.example.json").read_text(encoding="utf-8")
@@ -2155,7 +2156,7 @@ class ContractTests(unittest.TestCase):
             [
                 sys.executable,
                 str(SKILL / "intent_contract.py"),
-                str(SKILL / "examples" / "intent.example.json"),
+                str(TEXT / "examples" / "intent.example.json"),
             ],
             check=False,
             capture_output=True,
@@ -2165,7 +2166,7 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(json.loads(result.stdout)["pass"])
 
     def test_multipart_contract_validates_parts_and_interfaces(self):
-        example_path = SKILL / "examples" / "intent.example.json"
+        example_path = TEXT / "examples" / "intent.example.json"
         data = json.loads(example_path.read_text(encoding="utf-8"))
         data.pop("color_regions")
         data.pop("palette_reduction")
@@ -2272,7 +2273,7 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(any("modeled connector feature IDs" in error for error in errors), errors)
 
     def test_flat_semantic_feature_fields_are_validated(self):
-        example_path = SKILL / "examples" / "intent.example.json"
+        example_path = TEXT / "examples" / "intent.example.json"
         data = json.loads(example_path.read_text(encoding="utf-8"))
         self.assertEqual(intent_contract.validate(data, example_path.parent), [])
 
@@ -2286,14 +2287,14 @@ class ContractTests(unittest.TestCase):
         self.assertIn("features[1].edge_crossing is required for kind hole", errors)
 
     def test_contract_requires_manufacturing_decision(self):
-        example_path = SKILL / "examples" / "intent.example.json"
+        example_path = TEXT / "examples" / "intent.example.json"
         data = json.loads(example_path.read_text(encoding="utf-8"))
         data.pop("manufacturing")
         errors = intent_contract.validate(data, example_path.parent)
         self.assertIn("manufacturing must be an object", errors)
 
     def test_contract_rejects_old_schema_and_mode_specific_fields(self):
-        example_path = SKILL / "examples" / "intent.example.json"
+        example_path = TEXT / "examples" / "intent.example.json"
         data = json.loads(example_path.read_text(encoding="utf-8"))
         data["schema"] = "evidence-cad-intent/v3"
         errors = intent_contract.validate(data, example_path.parent)

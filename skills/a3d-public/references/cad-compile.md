@@ -1,6 +1,6 @@
 # Unified `cad_compile` boundary
 
-`cad_compile.py` is a compiler driver for the existing text-a3d contracts. It
+`cad_compile.py` is a compiler driver for the existing a3d text contracts. It
 does not prescribe a modeling workflow and never edits intent, scene, source,
 or geometry.
 
@@ -11,7 +11,7 @@ and `output-dir` paths. This is the only normal compilation entry point. The
 CLI fixes the workspace to the current session directory and invokes the
 managed Python driver without shell interpolation.
 
-The source process receives the text-a3d skill directory at the front of
+The source process receives the public runtime directory at the front of
 `PYTHONPATH`, so generated source can import `cad_helpers` directly. The driver
 also recomputes every returned artifact SHA-256.
 

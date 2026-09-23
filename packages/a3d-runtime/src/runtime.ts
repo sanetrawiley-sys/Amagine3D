@@ -171,7 +171,7 @@ export class CodexRuntime implements CodexRuntimeLike {
   readonly skills: readonly RuntimeSkillSummary[] = [
     {
       description: 'Create and validate printable 3D models with the project a3d CLI.',
-      name: 'text-a3d',
+      name: 'a3d-text',
     },
   ];
   readonly stateRoot: string;
@@ -301,8 +301,19 @@ export class CodexRuntime implements CodexRuntimeLike {
     environment.AMAGINE3D_SKILL_DIR = join(
       this.projectRoot,
       'skills',
-      'text-a3d',
+      'a3d-text',
     );
+    environment.AMAGINE3D_RUNTIME_DIR = join(
+      this.projectRoot,
+      'skills',
+      'a3d-public',
+    );
+    environment.PYTHONPATH = [
+      environment.AMAGINE3D_RUNTIME_DIR,
+      environment.PYTHONPATH ?? '',
+    ]
+      .filter(Boolean)
+      .join(delimiter);
     environment.PYTHONDONTWRITEBYTECODE = '1';
     environment.PYTHONNOUSERSITE = '1';
     environment.PATH = [
@@ -349,8 +360,19 @@ export class CodexRuntime implements CodexRuntimeLike {
           AMAGINE3D_SKILL_DIR: join(
             this.projectRoot,
             'skills',
-            'text-a3d',
+            'a3d-text',
           ),
+          AMAGINE3D_RUNTIME_DIR: join(
+            this.projectRoot,
+            'skills',
+            'a3d-public',
+          ),
+          PYTHONPATH: [
+            join(this.projectRoot, 'skills', 'a3d-public'),
+            this.environment.PYTHONPATH ?? '',
+          ]
+            .filter(Boolean)
+            .join(delimiter),
           ...(request.taskType === 'cad'
             ? { AMAGINE3D_EVIDENCE_GATE: 'v1' }
             : {}),

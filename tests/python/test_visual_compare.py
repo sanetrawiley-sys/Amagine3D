@@ -9,7 +9,7 @@ import unittest
 import numpy as np
 import trimesh
 
-SKILL = Path(__file__).resolve().parents[2] / "skills" / "text-a3d"
+SKILL = Path(__file__).resolve().parents[2] / "skills" / "a3d-public"
 sys.path.insert(0, str(SKILL))
 from cpu_z_buffer import MeshInput, RenderLimits, render_view
 from visual_compare import compare_revisions

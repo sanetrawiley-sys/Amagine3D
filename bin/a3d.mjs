@@ -3,13 +3,14 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runSearchCommand } from './a3d-search.mjs';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const skillRoot = join(projectRoot, 'skills', 'text-a3d');
+const skillRoot = join(projectRoot, 'skills', 'a3d-text');
+const runtimeRoot = join(projectRoot, 'skills', 'a3d-public');
 const python =
   process.env.AMAGINE3D_PYTHON?.trim() ||
   join(
@@ -43,7 +44,7 @@ const guides = {
 - Multiple permanent regions in one BRep body: color.cad_helpers.export_regions().
 - Display-only color belongs only in the GLB and must not be claimed as printed color.
 - Treat 3MF as the preferred manufactured-color deliverable.
-Read $AMAGINE3D_SKILL_DIR/color/BACKEND.md only for multiple material regions inside one part or uncommon region topology.`,
+Read $AMAGINE3D_RUNTIME_DIR/color/BACKEND.md only for multiple material regions inside one part or uncommon region topology.`,
   multipart: `Multipart construction
 - Make parts separate only when they are separately manufactured or assembled.
 - Existing part boundaries may carry distinct proposed manufacturing colors; do not add parts solely to create a palette.
@@ -55,7 +56,7 @@ Read $AMAGINE3D_SKILL_DIR/color/BACKEND.md only for multiple material regions in
 - A printable interface proves a static manufactured relationship, not a motion path or full-travel clearance.
 - Inspect the actual mating subfeatures; an unmeasured fit is unknown, not passed. Read references/design-review.md for component support, assembly paths, and repair reasoning.
 - Use a3d capabilities --symbol NAME for an exact helper signature.
-Read $AMAGINE3D_SKILL_DIR/references/multipart-connections.md only for direct fastening into printed plastic or a serviceable-enclosure closure.`,
+Read $AMAGINE3D_RUNTIME_DIR/references/multipart-connections.md only for direct fastening into printed plastic or a serviceable-enclosure closure.`,
   'pressable-control': `Pressable or sliding control
 - Use interface_recipes.retained_slider() only for guided single-axis translation that needs mechanical retention; otherwise model the actual pivot, flexure, membrane, or installed mechanism.
 - Declare radial clearance, guide depth, travel, axis, limits, retention, and the supporting/contact behavior explicitly.
@@ -66,7 +67,7 @@ Read $AMAGINE3D_SKILL_DIR/references/multipart-connections.md only for direct fa
 - Bind permanent button color through intent and scene material/color records, then verify 3MF and the preview.`,
   strategy: `Geometry strategy
 - Author manufactured geometry as BRep solids with editable source and genuine STEP.
-- For hollow lofts or dimensions that drift after finishing, read $AMAGINE3D_SKILL_DIR/references/surface-shell.md; adapt examples/surface_shell_build.py's build_geometry / measure_finished callbacks to the current source and station mapping.
+- For hollow lofts or dimensions that drift after finishing, read $AMAGINE3D_RUNTIME_DIR/references/surface-shell.md; adapt examples/surface_shell_build.py's build_geometry / measure_finished callbacks to the current source and station mapping.
 - Use simple sections and ruled or segmented lofts when the intended form permits coarser transitions; validate the solid and actual wall thickness.
 - Analytic profiles, extrusions, revolutions and sweeps remain appropriate for simpler geometry; construct cavities and mechanical interfaces in the same BRep body.
 - STL, 3MF and GLB meshes are derived exports. Autonomous mesh/SDF master authoring is not supported.
@@ -620,12 +621,15 @@ if (command === 'search') {
   const replay = admissionReplay(command, args);
   if (replay) rejectReplay(replay);
 
-  const scriptArgs = [join(skillRoot, commands[command]), ...args];
+  const scriptArgs = [join(runtimeRoot, commands[command]), ...args];
   if (workspaceCommands.has(command)) scriptArgs.push('--workspace', process.cwd());
   const child = spawn(python, scriptArgs, {
     cwd: process.cwd(),
     env: {
       ...process.env,
+      AMAGINE3D_SKILL_DIR: skillRoot,
+      AMAGINE3D_RUNTIME_DIR: runtimeRoot,
+      PYTHONPATH: [runtimeRoot, process.env.PYTHONPATH].filter(Boolean).join(delimiter),
       PYTHONDONTWRITEBYTECODE: '1',
       PYTHONNOUSERSITE: '1',
     },

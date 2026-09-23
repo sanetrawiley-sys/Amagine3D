@@ -9,7 +9,7 @@ import unittest
 from build123d import Align, Box, Pos, Rot, export_step
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "skills" / "text-a3d"))
+sys.path.insert(0, str(ROOT / "skills" / "a3d-public"))
 from authoring import write_scene
 from geometry_binding import bind_brep_feature
 from installation_check import bind_installation_check

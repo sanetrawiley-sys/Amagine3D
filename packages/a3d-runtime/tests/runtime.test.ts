@@ -403,11 +403,15 @@ test('runs isolated threads and exposes only normalized runtime events', async (
       set: {
         AMAGINE3D_EVIDENCE_GATE: 'v1',
         AMAGINE3D_ROOT: root,
-        AMAGINE3D_SKILL_DIR: join(root, 'skills', 'text-a3d'),
+        AMAGINE3D_SKILL_DIR: join(root, 'skills', 'a3d-text'),
+        AMAGINE3D_RUNTIME_DIR: join(root, 'skills', 'a3d-public'),
+        PYTHONPATH: join(root, 'skills', 'a3d-public'),
         PYTHONDONTWRITEBYTECODE: '1',
         PYTHONNOUSERSITE: '1',
       },
     });
+    assert.equal(clientOptions?.env?.AMAGINE3D_SKILL_DIR, join(root, 'skills', 'a3d-text'));
+    assert.equal(clientOptions?.env?.AMAGINE3D_RUNTIME_DIR, join(root, 'skills', 'a3d-public'));
     assert.equal(clientOptions?.env?.AMAGINE3D_EVIDENCE_GATE, 'v1');
     assert.match(clientOptions?.env?.CODEX_HOME ?? '', new RegExp(SESSION_ID, 'u'));
     assert.equal(clientOptions?.env?.PATH?.split(delimiter)[0], join(root, 'bin'));

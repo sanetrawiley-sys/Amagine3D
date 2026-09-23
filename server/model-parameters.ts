@@ -12,6 +12,7 @@ import {
 } from 'node:fs/promises';
 import {
   basename,
+  delimiter,
   dirname,
   isAbsolute,
   join,
@@ -33,6 +34,12 @@ import type { ParameterBuildRequest } from './trpc/schemas.ts';
 const PARAMETER_SOURCE_SCRIPT = resolve(
   import.meta.dirname,
   'parameter_source.py',
+);
+const PUBLIC_RUNTIME_ROOT = resolve(
+  import.meta.dirname,
+  '..',
+  'skills',
+  'a3d-public',
 );
 const MAX_PROCESS_OUTPUT_BYTES = 2 * 1024 * 1024;
 const PARAMETER_BUILD_TIMEOUT_MS = 180_000;
@@ -473,6 +480,9 @@ async function executeParameterBuild(
           AMAGINE3D_OUTPUT_DIR: outDir,
           AMAGINE3D_PARAMETER_OVERRIDES: JSON.stringify(values),
           MPLBACKEND: 'Agg',
+          PYTHONPATH: [PUBLIC_RUNTIME_ROOT, process.env.PYTHONPATH]
+            .filter(Boolean)
+            .join(delimiter),
           PYTHONDONTWRITEBYTECODE: '1',
         },
         timeoutMs: PARAMETER_BUILD_TIMEOUT_MS,

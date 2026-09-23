@@ -16,7 +16,8 @@ import trimesh
 from build123d import Align, Box, Cylinder, Pos, Rot, import_step
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL = ROOT / "skills" / "text-a3d"
+SKILL = ROOT / "skills" / "a3d-text"
+RUNTIME = ROOT / "skills" / "a3d-public"
 
 
 class PublicAuthoringExampleTests(unittest.TestCase):
@@ -25,7 +26,7 @@ class PublicAuthoringExampleTests(unittest.TestCase):
         temporary_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
             work = Path(directory)
-            env = {**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "PYTHONDONTWRITEBYTECODE": "1"}
+            env = {**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME), "PYTHONDONTWRITEBYTECODE": "1"}
             for name in ("installed_module_build.py", "installed_module_intent.py"):
                 shutil.copyfile(SKILL / "examples" / name, work / name)
             source = work / "installed_module_build.py"
@@ -65,7 +66,7 @@ print(json.dumps([P['width'], P['module_width']]))
         temporary_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
             work = Path(directory)
-            env = {**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "PYTHONDONTWRITEBYTECODE": "1"}
+            env = {**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME), "PYTHONDONTWRITEBYTECODE": "1"}
 
             def run(*args):
                 # Full compiles own per-stage deadlines; the CI job is the outer
@@ -253,7 +254,7 @@ print(json.dumps([P['width'], P['module_width']]))
             intent_hash = sha256(intent.read_bytes()).hexdigest()
             failed = subprocess.run(
                 [str(ROOT / "bin" / "a3d"), "draft", source.name, "--intent", intent.name],
-                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL),
+                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME),
                                "PYTHONDONTWRITEBYTECODE": "1"},
                 capture_output=True, text=True, encoding="utf-8", timeout=120,
             )
@@ -410,7 +411,7 @@ actual = measure_finished([100, 79.6, 81.8]).tolist()
 assert before == {str(p): p.read_bytes() for p in Path('.').rglob('*') if p.is_file()}
 print(json.dumps(actual))
 '''], cwd=work,
-                env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "PYTHONPATH": str(SKILL),
+                env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME),
                      "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUTF8": "1"},
                 capture_output=True, text=True, encoding="utf-8", timeout=120)
             self.assertEqual(callback.returncode, 0, callback.stdout + callback.stderr)
@@ -441,7 +442,7 @@ print(json.dumps(actual))
                 [str(ROOT / "bin" / "a3d"), "compile", scene_path.name,
                  "--intent", intent_path.name,
                  "--source", source_path.name, "--output-dir", "."],
-                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "PYTHONDONTWRITEBYTECODE": "1"},
+                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME), "PYTHONDONTWRITEBYTECODE": "1"},
                 capture_output=True, text=True, encoding="utf-8",
             )
             self.assertEqual(result.returncode, 0, result.stdout[-5000:] + result.stderr[-1000:])
@@ -465,7 +466,7 @@ print(json.dumps(actual))
             source_path.write_text(source.replace(marker, finishing + "\n" + marker))
             result = subprocess.run(
                 [str(ROOT / "bin" / "a3d"), "draft", source_path.name, "--intent", intent_path.name],
-                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "PYTHONDONTWRITEBYTECODE": "1"},
+                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME), "PYTHONDONTWRITEBYTECODE": "1"},
                 capture_output=True, text=True, encoding="utf-8", timeout=120,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -475,7 +476,7 @@ print(json.dumps(actual))
             result = subprocess.run(
                 [str(ROOT / "bin" / "a3d"), "compile", scene_path.name, "--intent", intent_path.name,
                  "--source", source_path.name, "--output-dir", "."],
-                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "PYTHONDONTWRITEBYTECODE": "1"},
+                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME), "PYTHONDONTWRITEBYTECODE": "1"},
                 capture_output=True, text=True, encoding="utf-8",
             )
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -505,7 +506,7 @@ print(json.dumps(actual))
             result = subprocess.run(
                 [str(ROOT / "bin" / "a3d"), "compile", scene_path.name, "--intent", intent_path.name,
                  "--source", source_path.name, "--output-dir", "."],
-                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "PYTHONDONTWRITEBYTECODE": "1"},
+                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME), "PYTHONDONTWRITEBYTECODE": "1"},
                 capture_output=True, text=True, encoding="utf-8",
             )
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)

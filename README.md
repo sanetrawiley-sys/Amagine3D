@@ -222,7 +222,9 @@ Amagine3D/
 │   └── src/                       Codex adapter, stable events, sandbox, and run supervision
 ├── bin/a3d                         Session-safe CAD command line
 ├── skills/
-│   └── text-a3d/                  Compact CAD guidance and semantic-scene compilers
+│   ├── a3d-text/                  Agent skill entrypoint and authoring examples
+│   │   └── examples/              Starter intent/build seeds for the text workflow
+│   └── a3d-public/                Shared BRep Python runtime, references, and color/
 │       └── color/BACKEND.md       Internal color-region, material, and 3MF backend
 ├── bundled-projects/                  Read-only example projects shown in the workbench
 ├── workspace/sessions/<sessionId>/   Generated source, models, reports, and previews
@@ -235,7 +237,7 @@ The private `@amagine3d/a3d-runtime` package starts or resumes one native Codex
 thread per product session and translates SDK events into a stable application
 contract. The Express server persists product sessions and streams those events
 to the workbench without importing Codex SDK types. The product layer adds only
-compact `AGENTS.md` guidance and the `text-a3d` skill. The `a3d` command wraps
+compact `AGENTS.md` guidance and the `a3d-text` skill. The `a3d` command wraps
 the existing managed Python compiler, validation, packaging, and rendering
 entry points; Codex decides when to use them instead of following a server-owned
 repair state machine.

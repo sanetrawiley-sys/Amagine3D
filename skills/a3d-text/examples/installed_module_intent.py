@@ -17,7 +17,7 @@ def feature(id, kind, acceptance, **fields):
 
 
 def main():
-    sys.path.insert(0, os.environ["AMAGINE3D_SKILL_DIR"])
+    sys.path.insert(0, os.environ["AMAGINE3D_RUNTIME_DIR"])
     from authoring import write_intent
 
     frame_features = [

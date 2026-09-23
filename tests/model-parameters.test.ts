@@ -27,7 +27,7 @@ const execFileAsync = promisify(execFile);
 const PROFILE_PATH = join(
   PROJECT_ROOT,
   'skills',
-  'text-a3d',
+  'a3d-text',
   'examples',
   'bambu-a1-mini-0.4-standard.example.json',
 );
@@ -58,7 +58,7 @@ test('parameter rebuilds support single to multiple plates and back without prom
         },
       });
       const source = `import sys
-sys.path.insert(0, ${JSON.stringify(join(PROJECT_ROOT, 'skills', 'text-a3d'))})
+sys.path.insert(0, ${JSON.stringify(join(PROJECT_ROOT, 'skills', 'a3d-public'))})
 from build123d import Box, Pos
 from cad_helpers import export_assembly, observe, parameter
 SIZE = parameter("size", 40.0, min_value=40, max_value=170, step=10, unit="mm", label="Size", affects=("lower", "upper"))
@@ -701,7 +701,7 @@ test(
   async () => {
     const root = await mkdtemp(join(tmpdir(), 'amagine-build123d-parameter-'));
     try {
-      const skillRoot = join(PROJECT_ROOT, 'skills', 'text-a3d');
+      const skillRoot = join(PROJECT_ROOT, 'skills', 'a3d-public');
       const inputs = await writeEvidenceInputs({
         dimensionsMm: [20, 12, 6],
         features: [
@@ -804,7 +804,7 @@ test(
   async () => {
     const root = await mkdtemp(join(tmpdir(), 'amagine-envelope-parameter-'));
     try {
-      const skillRoot = join(PROJECT_ROOT, 'skills', 'text-a3d');
+      const skillRoot = join(PROJECT_ROOT, 'skills', 'a3d-public');
       const inputs = await writeEvidenceInputs({
         dimensionsMm: [20, 12, 6],
         features: [{ id: 'primary-envelope', kind: 'envelope' }],
@@ -885,7 +885,7 @@ test(
   async () => {
     const root = await mkdtemp(join(tmpdir(), 'amagine-color-parameter-'));
     try {
-      const skillRoot = join(PROJECT_ROOT, 'skills', 'text-a3d', 'color');
+      const skillRoot = join(PROJECT_ROOT, 'skills', 'a3d-public', 'color');
       const inputs = await writeEvidenceInputs({
         colorRegions: [
           { hex: '#F05A35', name: 'left' },
@@ -992,7 +992,7 @@ test(
   async () => {
     const root = await mkdtemp(join(tmpdir(), 'amagine-assembly-parameter-'));
     try {
-      const skillRoot = join(PROJECT_ROOT, 'skills', 'text-a3d');
+      const skillRoot = join(PROJECT_ROOT, 'skills', 'a3d-public');
       const manufacturing = {
         interfaces: [
           {

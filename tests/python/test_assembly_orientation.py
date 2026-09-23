@@ -12,7 +12,7 @@ import numpy as np
 import trimesh
 from build123d import Align, Box, Pos, fillet, import_step
 
-SKILL = Path(__file__).resolve().parents[2] / "skills" / "text-a3d"
+SKILL = Path(__file__).resolve().parents[2] / "skills" / "a3d-public"
 sys.path.insert(0, str(SKILL))
 import bambu_profile
 import cad_helpers

@@ -1,4 +1,4 @@
-"""Compile and audit one text-a3d semantic scene without changing geometry.
+"""Compile and audit one a3d text semantic scene without changing geometry.
 
 This command is deliberately an orchestrator, not a geometry author or workflow
 engine.  It executes the Agent-authored Python source without a shell, validates

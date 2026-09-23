@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "skills" / "text-a3d"))
+sys.path.insert(0, str(ROOT / "skills" / "a3d-public"))
 
 from build123d import Cylinder, Pos, export_step, import_step
 from build_manifest import (
@@ -66,7 +66,7 @@ class BrepEnvelopePrecisionTests(unittest.TestCase):
                     standalone["dimensions_mm"]["x"] = item
                     intent_path = Path(directory) / "intent-only.json"
                     intent_path.write_text(json.dumps(standalone), encoding="utf-8")
-                    command = subprocess.run([sys.executable, str(ROOT / "skills/text-a3d/step_check.py"),
+                    command = subprocess.run([sys.executable, str(ROOT / "skills/a3d-public/step_check.py"),
                         str(path), "--intent", str(intent_path), "--tol", "10"],
                         capture_output=True, text=True, timeout=60)
                     result = json.loads(command.stdout)
@@ -80,7 +80,7 @@ class BrepEnvelopePrecisionTests(unittest.TestCase):
             for delta, flags, passes in ((0.009, [], True), (0.011, [], False),
                                          (0.011, ["--tol", "0.02"], True)):
                 with self.subTest(explicit_expect_delta=delta, flags=flags):
-                    command = subprocess.run([sys.executable, str(ROOT / "skills/text-a3d/step_check.py"),
+                    command = subprocess.run([sys.executable, str(ROOT / "skills/a3d-public/step_check.py"),
                         str(path), "--expect-x", str(expected[0] - delta), *flags],
                         capture_output=True, text=True, timeout=60)
                     result = json.loads(command.stdout)

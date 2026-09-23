@@ -18,7 +18,7 @@ boundaries from the user's request. `BuildSession` binds the authored BRep solid
 through the existing `write_scene` and STEP exporters. `surface-shell.md` explains
 the loft example's controls and wall-thickness checks.
 
-Run in the current session workspace (the runtime supplies `AMAGINE3D_SKILL_DIR`).
+Run in the current session workspace (the runtime supplies `AMAGINE3D_SKILL_DIR` and `AMAGINE3D_RUNTIME_DIR`).
 For a new ordinary single part, copy and draft `simple_brep_build.py` without an
 intent or profile:
 

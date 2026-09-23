@@ -102,11 +102,11 @@ test('parses provider/model while preserving slashes in model id', () => {
 });
 
 test('ships a valid CAD skill entrypoint for the Codex harness', async () => {
-  const path = resolve(import.meta.dirname, '..', 'skills', 'text-a3d', 'SKILL.md');
+  const path = resolve(import.meta.dirname, '..', 'skills', 'a3d-text', 'SKILL.md');
   const skill = await readFile(path, 'utf8');
   const frontmatter = skill.match(/^---\r?\n([\s\S]+?)\r?\n---\r?\n([\s\S]+)$/u);
   assert.ok(frontmatter, 'SKILL.md must contain frontmatter and a body');
-  assert.match(frontmatter[1], /^name:\s*text-a3d\s*$/mu);
+  assert.match(frontmatter[1], /^name:\s*a3d-text\s*$/mu);
   assert.match(frontmatter[1], /^description:\s*\S.+$/mu);
   assert.ok(frontmatter[2].trim(), 'SKILL.md body must not be empty');
 });
