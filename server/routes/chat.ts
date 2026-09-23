@@ -7,6 +7,7 @@ import {
   type AgentRunTimeouts,
   type CadCompileProgressStatus,
   type CodexRuntimeLike,
+  ModelOutputLimitError,
   type RunOutcome,
   RunStopped,
   RunSupervisor,
@@ -544,7 +545,10 @@ export function registerChatRoute(
       });
     } catch (error) {
       if (!(error instanceof RunStopped) && supervisor.running) {
-        supervisor.fail('codex_error', errorMessage(error));
+        supervisor.fail(
+          error instanceof ModelOutputLimitError ? error.code : 'codex_error',
+          errorMessage(error),
+        );
       }
     } finally {
       request.off('aborted', abortForDisconnect);

@@ -27,6 +27,7 @@ export {
   codexPrompt,
   codexReasoningEffort,
   CodexRuntime,
+  ModelOutputLimitError,
   type CodexRuntimeLike,
   type CodexTurnRequest,
   type CodexTurnResult,

@@ -17,6 +17,7 @@ import {
   codexPrompt,
   codexReasoningEffort,
   CodexRuntime,
+  ModelOutputLimitError,
   type RuntimeEvent,
 } from '../src/index.ts';
 
@@ -476,6 +477,16 @@ test('only environment configuration controls native search and network access',
                 receivedInput = input;
                 async function* events(): AsyncGenerator<ThreadEvent> {
                   yield { type: 'item.completed', item: { id: 'answer', type: 'agent_message', text: 'ok' } };
+                  yield {
+                    type: 'turn.completed',
+                    usage: {
+                      cache_write_input_tokens: 0,
+                      cached_input_tokens: 0,
+                      input_tokens: 1,
+                      output_tokens: 1,
+                      reasoning_output_tokens: 0,
+                    },
+                  };
                 }
                 return { events: events() };
               },
@@ -535,6 +546,16 @@ test('uses a per-turn Tavily broker without exposing the account key', async () 
               receivedInput = input;
               async function* events(): AsyncGenerator<ThreadEvent> {
                 yield { item: { id: 'answer', text: 'ok', type: 'agent_message' }, type: 'item.completed' };
+                yield {
+                  type: 'turn.completed',
+                  usage: {
+                    cache_write_input_tokens: 0,
+                    cached_input_tokens: 0,
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    reasoning_output_tokens: 0,
+                  },
+                };
               }
               return { events: events() };
             },
@@ -579,6 +600,16 @@ test('uses a per-turn Tavily broker without exposing the account key', async () 
             async runStreamed() {
               async function* events(): AsyncGenerator<ThreadEvent> {
                 yield { item: { id: 'answer', text: 'ok', type: 'agent_message' }, type: 'item.completed' };
+                yield {
+                  type: 'turn.completed',
+                  usage: {
+                    cache_write_input_tokens: 0,
+                    cached_input_tokens: 0,
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    reasoning_output_tokens: 0,
+                  },
+                };
               }
               return { events: events() };
             },
@@ -612,6 +643,126 @@ test('rejects non-Responses legacy API types', async () => {
         },
       }),
       /Responses API/u,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('never accepts a retried summary after max_output_tokens as a completed turn', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'amagine-codex-output-limit-'));
+  const observed: RuntimeEvent[] = [];
+  try {
+    const runtime = await CodexRuntime.create(root, {
+      environment: { LLM_API_KEY: 'test-key', PATH: '/usr/bin' },
+      clientFactory: () => {
+        const thread = {
+          id: 'limited-thread',
+          async runStreamed() {
+            async function* events(): AsyncGenerator<ThreadEvent> {
+              yield { thread_id: 'limited-thread', type: 'thread.started' };
+              yield { type: 'turn.started' };
+              yield {
+                item: {
+                  id: 'partial',
+                  text: '<summary>partial checkpoint</summary>',
+                  type: 'agent_message',
+                },
+                type: 'item.completed',
+              };
+              yield {
+                message:
+                  'Reconnecting... 1/2 (stream disconnected before completion: Incomplete response returned, reason: max_output_tokens)',
+                type: 'error',
+              };
+              yield {
+                item: {
+                  id: 'retry',
+                  text: '<summary>retried checkpoint</summary>',
+                  type: 'agent_message',
+                },
+                type: 'item.completed',
+              };
+              yield {
+                type: 'turn.completed',
+                usage: {
+                  cache_write_input_tokens: 0,
+                  cached_input_tokens: 1,
+                  input_tokens: 1,
+                  output_tokens: 1,
+                  reasoning_output_tokens: 0,
+                },
+              };
+            }
+            return { events: events() };
+          },
+        };
+        return { startThread: () => thread, resumeThread: () => thread };
+      },
+    });
+    await assert.rejects(
+      runtime.runTurn({
+        imagePaths: [],
+        message: 'build',
+        onEvent: (event) => {
+          observed.push(event);
+        },
+        sessionId: SESSION_ID,
+        taskType: 'cad',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof ModelOutputLimitError);
+        assert.equal(error.code, 'model_output_limit');
+        assert.match(error.message, /max_output_tokens/u);
+        return true;
+      },
+    );
+    assert.ok(observed.some((event) => event.type === 'turn.completed'));
+    assert.ok(
+      observed.some(
+        (event) =>
+          event.type === 'error' && /max_output_tokens/u.test(event.message),
+      ),
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('requires an explicit turn.completed event before accepting assistant text', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'amagine-codex-unfinished-turn-'));
+  try {
+    const runtime = await CodexRuntime.create(root, {
+      environment: { LLM_API_KEY: 'test-key', PATH: '/usr/bin' },
+      clientFactory: () => {
+        const thread = {
+          id: 'unfinished-thread',
+          async runStreamed() {
+            async function* events(): AsyncGenerator<ThreadEvent> {
+              yield { thread_id: 'unfinished-thread', type: 'thread.started' };
+              yield {
+                item: {
+                  id: 'partial',
+                  text: 'nonempty partial response',
+                  type: 'agent_message',
+                },
+                type: 'item.completed',
+              };
+            }
+            return { events: events() };
+          },
+        };
+        return { startThread: () => thread, resumeThread: () => thread };
+      },
+    });
+    await assert.rejects(
+      runtime.runTurn({
+        imagePaths: [],
+        message: 'build',
+        sessionId: SESSION_ID,
+        taskType: 'cad',
+      }),
+      /ended before turn completion/u,
     );
   } finally {
     await rm(root, { force: true, recursive: true });

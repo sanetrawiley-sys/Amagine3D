@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import type {
-  CodexRuntimeLike,
-  RuntimeEvent,
+import {
+  ModelOutputLimitError,
+  type CodexRuntimeLike,
+  type RuntimeEvent,
 } from '@amagine3d/a3d-runtime';
 import express from 'express';
 
@@ -421,6 +422,70 @@ test('streams Codex failures without aborting the settled runtime', async () => 
       'exceeded retry limit, last status: 429 Too Many Requests',
     );
     assert.equal(typeof terminal.finishedAt, 'number');
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('surfaces max_output_tokens as an incomplete model turn instead of completion', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'amagine-output-limit-route-'));
+  await mkdir(join(root, 'workspace', 'sessions', SESSION_ID), {
+    recursive: true,
+  });
+  const runtime: CodexRuntimeLike = {
+    configured: true,
+    modelName: 'openai/test-model',
+    runtimeReady: true,
+    searchBackend: 'disabled',
+    skillDiagnostics: [],
+    skills: [],
+    stateRoot: join(root, 'state'),
+    webSearchEnabled: false,
+    workspaceRoot: join(root, 'workspace'),
+    runTurn: async () => {
+      throw new ModelOutputLimitError();
+    },
+  };
+  const app = express();
+  app.use(express.json());
+  registerChatRoute(app, {
+    python: { executable: null, ready: false, version: null },
+    runtime,
+    runtimeError: undefined,
+  });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  try {
+    const { port } = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${String(port)}/api/chat`, {
+      body: JSON.stringify({
+        message: '继续建模',
+        sessionId: SESSION_ID,
+        taskType: 'chat',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    });
+    const events = (await response.text())
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as AgentEvent);
+    const terminal = events.at(-1);
+    assert.equal(terminal?.type, 'error');
+    if (terminal?.type !== 'error') throw new Error('Expected error event.');
+    assert.equal(terminal.code, 'model_output_limit');
+    assert.match(terminal.message, /max_output_tokens/u);
+    const messages = await readSessionMessages(
+      join(root, 'state', 'sessions', `${SESSION_ID}.json`),
+    );
+    const assistant = messages.at(-1);
+    assert.equal(assistant?.role, 'assistant');
+    if (assistant?.role !== 'assistant') throw new Error('Expected assistant turn.');
+    assert.match(assistant.replyText, /max_output_tokens/u);
+    assert.ok(assistant.steps.some(({ status }) => status === 'failed'));
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));

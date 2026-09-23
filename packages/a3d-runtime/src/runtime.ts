@@ -38,6 +38,17 @@ export interface CodexTurnResult {
   threadId: string;
 }
 
+export class ModelOutputLimitError extends Error {
+  readonly code = 'model_output_limit';
+
+  constructor() {
+    super(
+      '模型输出达到 max_output_tokens 上限；本轮不完整，未接受随后返回的摘要或部分回复。',
+    );
+    this.name = 'ModelOutputLimitError';
+  }
+}
+
 export interface CodexRuntimeLike {
   readonly configured: boolean;
   readonly modelName: string;
@@ -74,6 +85,8 @@ const RESPONSE_API_TYPES = new Set([
   'openai-codex-responses',
   'openai-responses',
 ]);
+const MAX_OUTPUT_TOKENS_ERROR =
+  /Incomplete response returned, reason:\s*max_output_tokens/iu;
 const REASONING_LEVELS = new Set<ModelReasoningEffort>([
   'minimal',
   'low',
@@ -442,6 +455,8 @@ export class CodexRuntime implements CodexRuntimeLike {
 
     let finalResponse = '';
     let lastRuntimeError = '';
+    let outputLimitReached = false;
+    let turnCompleted = false;
     let threadId = request.threadId;
     const compileProgress = new CompileProgressExtractor();
     for await (const event of events) {
@@ -473,11 +488,21 @@ export class CodexRuntime implements CodexRuntimeLike {
         }
         await request.onEvent?.(normalized);
       }
+      if (event.type === 'turn.completed') turnCompleted = true;
       if (event.type === 'turn.failed') throw new Error(event.error.message);
-      if (event.type === 'error') lastRuntimeError = event.message;
+      if (event.type === 'error') {
+        lastRuntimeError = event.message;
+        outputLimitReached ||= MAX_OUTPUT_TOKENS_ERROR.test(event.message);
+      }
     }
     const resolvedThreadId = threadId || thread.id;
     if (!resolvedThreadId) throw new Error('A3D runtime did not return a thread id.');
+    if (outputLimitReached) throw new ModelOutputLimitError();
+    if (!turnCompleted) {
+      throw new Error(
+        lastRuntimeError || 'A3D response stream ended before turn completion.',
+      );
+    }
     if (!finalResponse.trim()) {
       throw new Error(lastRuntimeError || 'A3D did not return a final response.');
     }
