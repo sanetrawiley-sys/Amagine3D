@@ -60,7 +60,7 @@ class CadDraftTests(unittest.TestCase):
         self.assertEqual(result["schema"], "a3d-draft-result/v1")
         self.assertEqual(result["status"], "draft")
         self.assertEqual(result["issues"], [])
-        self.assertFalse(result["deliveryReady"])
+        self.assertNotIn("deliveryReady", result)
         self.assertEqual(result["constructionFeatures"], {
             "frame-body": {"owner": "frame", "role": "solid"},
             "module-space": {"owner": "frame", "role": "cutter"},
@@ -91,7 +91,7 @@ class CadDraftTests(unittest.TestCase):
         self.assertAlmostEqual(frame_volume, 47 * 35 * 15 - 41 * 29 * 13 - 34 * 22 * 2, places=5)
         display = trimesh.load(result["artifacts"]["glb"]["path"], force="scene", process=False)
         self.assertEqual(display.metadata["status"], "draft")
-        self.assertFalse(display.metadata["deliveryReady"])
+        self.assertNotIn("deliveryReady", display.metadata)
         self.assertTrue(all(mesh.metadata["amagine3d"]["role"] == "display-only" for mesh in display.geometry.values()))
         with Image.open(result["artifacts"]["preview"]["path"]) as picture:
             self.assertGreaterEqual(picture.width, 640)
@@ -105,7 +105,7 @@ class CadDraftTests(unittest.TestCase):
         self.assertEqual(result["issues"][0]["code"], "DRAFT.TIMEOUT")
         self.assertNotIn("repairHint", result["issues"][0])
         self.assertNotIn("detail", result["issues"][0])
-        self.assertFalse(result["deliveryReady"])
+        self.assertNotIn("deliveryReady", result)
         self.assertEqual(result["artifacts"], {})
         pid = int((self.workspace / "child.pid").read_text())
         with self.assertRaises(ProcessLookupError):
@@ -140,7 +140,7 @@ class CadDraftTests(unittest.TestCase):
                 self.assertEqual(command.returncode, 1)
                 result = json.loads(command.stdout)
                 self.assertEqual(result["status"], "failed")
-                self.assertFalse(result["deliveryReady"])
+                self.assertNotIn("deliveryReady", result)
                 self.assertEqual(result["artifacts"], {})
                 hint = result["issues"][0]["repairHint"]
                 self.assertIn("export_draft(parts)", hint)
@@ -306,7 +306,7 @@ data = json.loads(p.read_text())
             command = self.cli("draft", "draft.py")
             self.assertEqual(command.returncode, 1, command.stdout + command.stderr)
             result = json.loads(command.stdout)
-            self.assertFalse(result["deliveryReady"])
+            self.assertNotIn("deliveryReady", result)
             self.assertEqual(result["artifacts"], {})
             if tail:
                 self.assertTrue(result["diagnosticWarning"])

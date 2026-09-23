@@ -138,7 +138,7 @@ Unexpected untyped compiler failures use `INTERNAL.COMPILER_ERROR` instead of
 guessing a geometry diagnosis from traceback wording.
 
 `pass: true` means the automated compile, QA, and render steps passed. The
-status is still `awaiting-visual-review` and `deliveryReady` remains false.
+status is still `awaiting-visual-review`.
 Read the returned preview with native `view_image`, compare it with the user's
 request, and improve the source where useful. Communicate the actual visual
 result and remaining limitations in the response. Visual review has no separate

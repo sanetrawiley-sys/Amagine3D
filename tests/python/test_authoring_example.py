@@ -114,7 +114,7 @@ print(json.dumps([P['width'], P['module_width']]))
                 self.assertEqual(sha256(source.read_bytes()).hexdigest(), source_hash)
             if draft is not None:
                 self.assertEqual(draft["status"], "draft")
-                self.assertFalse(draft["deliveryReady"])
+                self.assertNotIn("deliveryReady", draft)
                 self.assertFalse(list(work.glob("*_report.json")))
                 self.assertFalse(list(work.glob("*_scene.json")))
             run(cli, "compile", f"{example_name}_scene.json", "--intent", f"{example_name}_intent.json", "--source", source.name, "--output-dir", ".")
@@ -472,7 +472,7 @@ print(json.dumps(actual))
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             draft = json.loads(result.stdout)
             self.assertEqual(draft["status"], "draft")
-            self.assertFalse(draft["deliveryReady"])
+            self.assertNotIn("deliveryReady", draft)
             result = subprocess.run(
                 [str(ROOT / "bin" / "a3d"), "compile", scene_path.name, "--intent", intent_path.name,
                  "--source", source_path.name, "--output-dir", "."],

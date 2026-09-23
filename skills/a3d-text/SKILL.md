@@ -156,11 +156,11 @@ material. Return to its owning feature/interface/source line and shared datum, o
 replace the construction strategy. A larger cutter does not repair an operation
 that misses material; repeated compiles do not replace geometric reasoning.
 
-When `pass=true`, status is `awaiting-visual-review`, and `deliveryReady=false`,
-stop compiling and inspect the preview. Before replying, read that result and
-report its readiness flags unchanged. You may describe an actual visual review
-and its scope; that does not establish manufacturing or delivery readiness.
-Never claim the model ready while `deliveryReady=false`.
+When `pass=true` and status is `awaiting-visual-review`, stop compiling and
+inspect the preview. Before replying, read that result and report its readiness
+flags unchanged. You may describe an actual visual review and its scope; that
+does not establish manufacturing or delivery readiness. Never claim the model
+ready from `pass=true` alone.
 Match support/bridge claims to `printOrientationEvidence`
 and current mesh-audit warnings; its automatic ranked export pose is evidence,
 not proof of design correctness or support-free printing. `rotated_xy_90deg=false`

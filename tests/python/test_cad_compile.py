@@ -697,7 +697,7 @@ class CadCompileTests(unittest.TestCase):
                 result, runner = _compile_with_render_fixture(root, InstallationFailure)
             self.assertIn("installation-qa", runner.calls)
             self.assertFalse(result["pass"])
-            self.assertFalse(result["deliveryReady"])
+            self.assertNotIn("deliveryReady", result)
             persisted = json.loads((root / "part_compile-result.json").read_text())
             self.assertIn("installationAudit", persisted["artifacts"])
             self.assertIn("diagnosticPreview", result["artifacts"])
@@ -890,7 +890,6 @@ class CadCompileTests(unittest.TestCase):
 
         result = {
             "artifacts": {},
-            "deliveryReady": False,
             "issues": [],
             "pass": True,
             "printOrientationEvidence": evidence,
@@ -922,7 +921,6 @@ class CadCompileTests(unittest.TestCase):
                 },
             },
             "backend": "brep-source",
-            "deliveryReady": False,
             "issues": [
                 {
                     "code": "QA.THIN_WALL",
@@ -980,7 +978,7 @@ class CadCompileTests(unittest.TestCase):
             + 'File "build.py", line 69\nTypeError: unexpected keyword argument axis'
         )
         result = {
-            "pass": False, "status": "failed", "deliveryReady": False,
+            "pass": False, "status": "failed",
             "result": {"path": "/tmp/part_compile-result.json"},
             "issues": [{
                 "id": "source-failure", "code": "BACKEND.COMPILE_FAILED",
@@ -999,7 +997,7 @@ class CadCompileTests(unittest.TestCase):
 
         self.assertLessEqual(len(encoded), cad_compile.MAX_SUMMARY_CHARS)
         self.assertFalse(summary["pass"])
-        self.assertFalse(summary["deliveryReady"])
+        self.assertNotIn("deliveryReady", summary)
         self.assertEqual(summary["result"], result["result"])
         issue = summary["issues"][0]
         self.assertEqual(issue["id"], "source-failure")
@@ -1028,7 +1026,7 @@ class CadCompileTests(unittest.TestCase):
                            "expected": {"value_mm": 54, "min_mm": 53.9, "max_mm": 54.1,
                                         "measurement_precision_mm": precision}}
                 before = json.dumps(details)
-                result = {"pass": False, "status": "failed", "deliveryReady": False,
+                result = {"pass": False, "status": "failed",
                           "result": {"path": "/tmp/part_compile-result.json"}, "issues": []}
                 cad_compile._issue(result, code=code, stage="qa:part", check=check,
                                    message="actual check failed", repair_hint=override, details=details)
@@ -1095,7 +1093,7 @@ class CadCompileTests(unittest.TestCase):
         # Controls expand sixfold in JSON; per-string limits alone cannot bound stdout.
         detail = "\x00\n\"\\屏幕" * 1_000
         result = {
-            "pass": False, "status": "failed", "deliveryReady": False,
+            "pass": False, "status": "failed",
             "result": {"path": "/tmp/part_compile-result.json"},
             "issues": [
                 {"id": f"error-{i}", "code": "QA.FAILED", "severity": "error",
@@ -1550,7 +1548,7 @@ class CadCompileTests(unittest.TestCase):
 
                 result = compile_cad(CompileOptions(workspace=root, marker=marker, intent=intent, scene=Path("part_scene.json"), source=source, output_dir=Path(".")), runner_factory=CandidateRunner)
                 self.assertFalse(result["pass"])
-                self.assertFalse(result["deliveryReady"])
+                self.assertNotIn("deliveryReady", result)
                 self.assertNotIn("buildReport", result["artifacts"])
                 self.assertNotIn("renderEvidence", result["artifacts"])
                 self.assertEqual(old_pointer.read_text(), "previous successful render")
@@ -2117,7 +2115,7 @@ class CadCompileTests(unittest.TestCase):
             )
             self.assertTrue(result["pass"], result)
             self.assertEqual(result["status"], "awaiting-visual-review")
-            self.assertFalse(result["deliveryReady"])
+            self.assertNotIn("deliveryReady", result)
             self.assertTrue(result["visualReviewRequired"])
             self.assertEqual(
                 holder["runner"].calls,
@@ -2203,7 +2201,7 @@ class CadCompileTests(unittest.TestCase):
 
             result = compile_cad(CompileOptions(workspace=root, marker=marker, intent=intent, scene=scene, source=source, output_dir=Path(".")), runner_factory=factory)
             self.assertFalse(result["pass"])
-            self.assertFalse(result["deliveryReady"])
+            self.assertNotIn("deliveryReady", result)
             self.assertEqual(result["status"], "failed")
             self.assertEqual(old_pointer.read_bytes(), b"last successful render")
             self.assertNotIn("preview", result["artifacts"])

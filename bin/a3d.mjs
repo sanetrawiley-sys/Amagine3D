@@ -193,7 +193,6 @@ function draftReplay(root, args) {
     if (
       result?.schema !== 'a3d-draft-result/v1' ||
       result.status !== 'draft' ||
-      result.deliveryReady !== false ||
       !UUID.test(result.runId ?? '') ||
       basename(dirname(resultPath)) !== result.runId ||
       workspaceFile(root, result.result) !== resultPath ||
@@ -256,7 +255,6 @@ function compileReplay(root, args) {
     result.pass !== true ||
     result.status !== 'awaiting-visual-review' ||
     result.visualReviewRequired !== true ||
-    result.deliveryReady !== false ||
     !UUID.test(result.runId ?? '') ||
     !bindingMatches(result.inputBindings?.source, source, root) ||
     !bindingMatches(result.inputBindings?.intent, intent, root) ||

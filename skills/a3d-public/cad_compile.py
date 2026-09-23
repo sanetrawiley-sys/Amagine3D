@@ -293,7 +293,6 @@ def _agent_summary(result: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "artifacts": {},
         "backend": _project_summary_value(result.get("backend"))[0],
-        "deliveryReady": result.get("deliveryReady", False),
         "issueCounts": {
             "errors": len(errors) + int(result.get("omittedErrorCount", 0) or 0),
             "omitted": int(result.get("omittedIssueCount", 0) or 0),
@@ -2193,7 +2192,6 @@ def _finish(
         "awaiting-visual-review" if result["pass"] else "failed"
     )
     result["visualReviewRequired"] = True
-    result["deliveryReady"] = False
     if log_path.is_file():
         result["artifacts"]["log"] = _artifact(log_path)
     try:
@@ -2236,7 +2234,6 @@ def _finish(
         },
         "backend": result.get("backend"),
         "capabilityFingerprint": result.get("capabilityFingerprint"),
-        "deliveryReady": False,
         "issues": result["issues"],
         "model": result.get("model"),
         "omittedErrorCount": result["omittedErrorCount"],
@@ -2338,7 +2335,6 @@ def compile_cad(
     result: dict[str, Any] = {
         "artifacts": {},
         "backend": None,
-        "deliveryReady": False,
         "inputs": {
             "workspace": str(workspace),
             "intent": str(intent_path),
@@ -3147,7 +3143,6 @@ def main(argv: list[str] | None = None) -> int:
         result = {
             "artifacts": {},
             "backend": None,
-            "deliveryReady": False,
             "issues": [
                 {
                     "code": "CONFIG.INVALID",

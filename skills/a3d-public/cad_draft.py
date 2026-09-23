@@ -112,13 +112,13 @@ def export_draft(parts: Mapping[str, Any], *, references: Mapping[str, Any] | No
     step, glb, preview = (output / name for name in ("draft.step", "draft.glb", "draft-preview.png"))
     export_step(Compound(children=shapes), str(step), unit=Unit.MM)
     export_display_glb((), glb, display_items=items,
-                       metadata={"status": "draft", "deliveryReady": False, "runId": run_id})
+                       metadata={"status": "draft", "runId": run_id})
     contact = render_contact_sheet(
         _render_inputs(glb, DEFAULT_MATERIAL), 640,
         title="DRAFT | unvalidated geometry | blue: proposed parts | orange: component references",
     )
     contact.image.save(preview, format="PNG")
-    result = {"schema": GEOMETRY_SCHEMA, "status": "draft", "deliveryReady": False,
+    result = {"schema": GEOMETRY_SCHEMA, "status": "draft",
               "runId": run_id, "units": "mm", "coordinateSystem": {"handedness": "right", "up": "Z"},
               "objects": records,
               "constructionFeatures": construction_records, "constructionFeatureScope": CONSTRUCTION_FEATURE_SCOPE,
@@ -146,7 +146,7 @@ def run_draft(source: Path, *, workspace: Path, timeout_seconds: float = 120.0,
     output.mkdir(parents=True, exist_ok=False)
     source_binding = _binding(source)
     log = output / "draft.log"
-    result = {"schema": DRAFT_SCHEMA, "status": "failed", "deliveryReady": False,
+    result = {"schema": DRAFT_SCHEMA, "status": "failed",
               "runId": run_id, "source": source_binding, "result": str(output / "draft-result.json"),
               "artifacts": {}, "issues": [],
               "limitations": ["Provisional geometry only; intent, feature acceptance, installation and print QA have not run."]}
@@ -205,7 +205,6 @@ def run_draft(source: Path, *, workspace: Path, timeout_seconds: float = 120.0,
             manifest = json.loads((output / "draft-geometry.json").read_text())
             if (not isinstance(manifest, dict) or manifest.get("schema") != GEOMETRY_SCHEMA
                     or manifest.get("status") != "draft" or manifest.get("runId") != run_id
-                    or manifest.get("deliveryReady") is not False
                     or not isinstance(manifest.get("artifacts"), dict) or not isinstance(manifest.get("objects"), list)):
                 raise ValueError("source did not emit current draft geometry")
             for kind, filename in (("step", "draft.step"), ("glb", "draft.glb"), ("preview", "draft-preview.png")):
@@ -241,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
         result = run_draft(args.source, workspace=args.workspace, timeout_seconds=args.timeout_seconds,
                            intent=args.intent)
     except (ConfigurationError, OSError) as error:
-        print(json.dumps({"schema": DRAFT_SCHEMA, "status": "failed", "deliveryReady": False, "error": str(error)}))
+        print(json.dumps({"schema": DRAFT_SCHEMA, "status": "failed", "error": str(error)}))
         return 2
     print(json.dumps(result, indent=2))
     return 0 if result["status"] == "draft" else 1

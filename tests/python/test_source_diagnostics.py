@@ -143,7 +143,7 @@ class SourceDiagnosticsTests(unittest.TestCase):
                 self.assertEqual(diagnostics["runId"], result["runId"])
                 self.assertEqual(diagnostics["issues"][0]["observed"]["booleanWitness"], witness)
                 self.assertFalse(result["pass"])
-                self.assertFalse(result["deliveryReady"])
+                self.assertNotIn("deliveryReady", result)
                 self.assertFalse((root / "body.publish.json").exists())
                 self.assertFalse(list(root.glob("*.step")))
                 self.assertEqual(inputs, {p: sha256(p.read_bytes()).hexdigest() for p in inputs})
