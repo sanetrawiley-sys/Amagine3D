@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { availableParallelism } from 'node:os';
+import { basename, delimiter, join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const python =
@@ -66,7 +67,10 @@ const suites = {
     methodName('test_installed_module_exports_two_parts_with_installation_and_screw_proofs'),
   ],
   'cad-surface': [
+    methodName('test_surface_shell_compiles_with_measured_width_and_open_cavity'),
+    methodName('test_surface_shell_finishing_edit_previews_but_fails_final_acceptance'),
     methodName('test_surface_shell_recompiles_changed_walls_without_rewriting_intent'),
+    methodName('test_surface_shell_rejects_semantic_envelope_drift'),
   ],
   'cpu-renderer': [moduleName('test_cpu_z_buffer')],
   'unit-a': unitA.map(moduleName),
@@ -91,23 +95,156 @@ function validateCoverage() {
 
 validateCoverage();
 
-const args = process.argv.slice(2);
-let pythonArgs;
-if (args.length === 0) {
-  pythonArgs = ['-m', 'unittest', 'discover', '-s', 'tests/python', '-p', 'test_*.py'];
-} else if (args.length === 2 && args[0] === '--suite' && suites[args[1]]) {
-  pythonArgs = ['-m', 'unittest', ...suites[args[1]]];
-} else if (args.length === 1 && args[0] === '--list-suites') {
-  console.log(Object.keys(suites).sort().join('\n'));
-  process.exit(0);
-} else {
-  console.error(`Usage: node scripts/test-python.mjs [--suite ${Object.keys(suites).sort().join('|')}]`);
-  process.exit(2);
+const usage = `Usage: node scripts/test-python.mjs [--suite ${Object.keys(suites).sort().join('|')}] [--workers N]`;
+
+function parseWorkers(value) {
+  const workers = Number.parseInt(value ?? '', 10);
+  if (!Number.isFinite(workers) || workers < 1) return null;
+  return Math.min(workers, availableParallelism());
 }
 
-const result = spawnSync(python, pythonArgs, { cwd: root, stdio: 'inherit' });
-if (result.error) {
-  console.error(`Python tests could not start: ${result.error.message}`);
+const args = process.argv.slice(2);
+let suiteName = null;
+let workers = null;
+for (let index = 0; index < args.length; index += 1) {
+  const arg = args[index];
+  if (arg === '--list-suites' && args.length === 1) {
+    console.log(Object.keys(suites).sort().join('\n'));
+    process.exit(0);
+  } else if (arg === '--suite' && index + 1 < args.length) {
+    suiteName = args[index + 1];
+    index += 1;
+  } else if (arg === '--workers' && index + 1 < args.length) {
+    workers = parseWorkers(args[index + 1]);
+    if (workers === null) {
+      console.error(usage);
+      process.exit(2);
+    }
+    index += 1;
+  } else {
+    console.error(usage);
+    process.exit(2);
+  }
+}
+if (suiteName !== null && !suites[suiteName]) {
+  console.error(usage);
+  process.exit(2);
+}
+if (workers === null) {
+  workers = parseWorkers(process.env.A3D_PYTHON_WORKERS) ?? 1;
+}
+
+function discoverTestIds() {
+  const discoverScript = `
+import sys, unittest
+sys.path.insert(0, ${JSON.stringify(root)})
+
+
+def walk(node):
+    if isinstance(node, unittest.TestSuite):
+        for child in node:
+            yield from walk(child)
+    else:
+        yield node.id()
+
+
+suite = unittest.TestLoader().discover(${JSON.stringify(join(root, 'tests', 'python'))}, pattern='test_*.py')
+for name in walk(suite):
+    print(name)
+`;
+  const found = spawnSync(python, ['-c', discoverScript], {
+    cwd: root,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (found.error) {
+    console.error(`Python tests could not start: ${found.error.message}`);
+    process.exit(1);
+  }
+  if (found.status !== 0) {
+    process.stderr.write(found.stderr ?? '');
+    process.exit(found.status ?? 1);
+  }
+  return (found.stdout ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+const running = new Set();
+const workerEnv = {
+  ...process.env,
+  PYTHONPATH: [join(root, 'tests', 'python'), process.env.PYTHONPATH].filter(Boolean).join(delimiter),
+};
+
+function runCases(ids) {
+  return new Promise((settle) => {
+    const child = spawn(python, ['-m', 'unittest', ...ids], { cwd: root, env: workerEnv });
+    running.add(child);
+    let output = '';
+    child.stdout.on('data', (chunk) => {
+      output += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      output += chunk;
+    });
+    child.once('error', (error) => {
+      running.delete(child);
+      settle({ code: 1, output: `${output}\nPython tests could not start: ${error.message}` });
+    });
+    child.once('exit', (code) => {
+      running.delete(child);
+      settle({ code: code ?? 1, output });
+    });
+  });
+}
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    for (const child of running) child.kill(signal);
+  });
+}
+
+if (workers === 1) {
+  const pythonArgs =
+    suiteName === null
+      ? ['-m', 'unittest', 'discover', '-s', 'tests/python', '-p', 'test_*.py']
+      : ['-m', 'unittest', ...suites[suiteName]];
+  const single = spawnSync(python, pythonArgs, { cwd: root, stdio: 'inherit' });
+  if (single.error) {
+    console.error(`Python tests could not start: ${single.error.message}`);
+    process.exit(1);
+  }
+  process.exit(single.status ?? 1);
+}
+
+const ids = suiteName === null ? discoverTestIds() : suites[suiteName];
+if (ids.length === 0) {
+  console.error('No Python tests were discovered.');
   process.exit(1);
 }
-process.exit(result.status ?? 1);
+const shards = Array.from({ length: Math.min(workers, ids.length) }, () => []);
+ids.forEach((id, index) => shards[index % shards.length].push(id));
+console.log(`Python tests: ${ids.length} cases across ${shards.length} workers`);
+const results = await Promise.all(
+  shards.map(async (shard, index) => ({
+    index,
+    size: shard.length,
+    ...(await runCases(shard)),
+  })),
+);
+let failures = 0;
+for (const result of results) {
+  const label = `[worker ${result.index + 1}] ${result.size} cases`;
+  if (result.code === 0) {
+    const summary = result.output
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('Ran ') || line.startsWith('OK'));
+    console.log(`${label} — ${summary.join(' ')}`);
+    continue;
+  }
+  failures += 1;
+  console.error(`${label} — FAILED\n${result.output}`);
+}
+process.exit(failures === 0 ? 0 : 1);

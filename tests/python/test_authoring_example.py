@@ -20,13 +20,44 @@ SKILL = ROOT / "skills" / "a3d-text"
 RUNTIME = ROOT / "skills" / "a3d-public"
 
 
+def example_env(**extra):
+    return {
+        **os.environ,
+        "AMAGINE3D_SKILL_DIR": str(SKILL),
+        "AMAGINE3D_RUNTIME_DIR": str(RUNTIME),
+        "PYTHONPATH": str(RUNTIME),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        **extra,
+    }
+
+
+# One real compile is the expensive part of every test here (40-62 s per
+# example), so each variant is compiled once per session and shared.
+_COMPILED_EXAMPLES: dict[tuple, Path] = {}
+_CACHED_DIRECTORIES: list[tempfile.TemporaryDirectory] = []
+# Measuring the exported STEP and mesh costs ~35 s, so the pristine surface-shell
+# measurement is taken once and shared by the tests that derive from it.
+_BASELINE_MEASUREMENTS: dict[str, dict] = {}
+
+
+def _restore_workspace(work, pristine):
+    """Put one cached workspace back to its post-compile bytes, at the same path."""
+    shutil.rmtree(work)
+    shutil.copytree(pristine, work)
+
+
+def tearDownModule():
+    while _CACHED_DIRECTORIES:
+        _CACHED_DIRECTORIES.pop().cleanup()
+
+
 class PublicAuthoringExampleTests(unittest.TestCase):
     def test_installation_controls_import_without_geometry_and_do_not_rewrite_targets(self):
         temporary_root = ROOT / "workspace" / "skill-validation"
         temporary_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
             work = Path(directory)
-            env = {**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME), "PYTHONDONTWRITEBYTECODE": "1"}
+            env = example_env()
             for name in ("installed_module_build.py", "installed_module_intent.py"):
                 shutil.copyfile(SKILL / "examples" / name, work / name)
             source = work / "installed_module_build.py"
@@ -61,66 +92,107 @@ print(json.dumps([P['width'], P['module_width']]))
             self.assertFalse((work / "installed_module_parameters.json").exists())
 
     @contextmanager
-    def compile_example(self, example_name, *, source_changes=(), intent_changes=()):
-        temporary_root = ROOT / "workspace" / "skill-validation"
-        temporary_root.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=temporary_root) as directory:
-            work = Path(directory)
-            env = {**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME), "PYTHONDONTWRITEBYTECODE": "1"}
+    def compile_example(self, example_name, *, source_changes=(), intent_changes=(), drafts=True,
+                        mutable=False):
+        """Compile one public example through the real CLI and yield its workspace.
 
-            def run(*args):
-                # Full compiles own per-stage deadlines; the CI job is the outer
-                # safety boundary. Short setup/draft commands retain a local cap.
-                timeout = None if len(args) > 1 and args[1] == "compile" else 120
-                result = subprocess.run(
-                    args,
-                    cwd=work,
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    timeout=timeout,
-                )
-                self.assertEqual(result.returncode, 0, result.stdout[-5000:] + result.stderr[-1000:])
-                return result
+        A variant is compiled once per test session and cached, so several tests
+        can assert different things about the same real compile. The compiled
+        state binds itself to its absolute workspace path, so a test that edits
+        the source and recompiles has to work in place: `mutable=True` restores
+        the pristine snapshot of that directory around the test instead of
+        handing out a copy under a different path.
 
-            cli = str(ROOT / "bin" / "a3d")
-            for name in (f"{example_name}_intent.py", f"{example_name}_build.py"):
-                shutil.copyfile(SKILL / "examples" / name, work / name)
-            for suffix, changes in (("build", source_changes), ("intent", intent_changes)):
-                path = work / f"{example_name}_{suffix}.py"
-                text = path.read_text()
-                for before, after in changes:
-                    self.assertIn(before, text)
-                    text = text.replace(before, after)
-                path.write_text(text)
-            source = work / f"{example_name}_build.py"
-            source_hash = sha256(source.read_bytes()).hexdigest()
-            draft = None
-            if example_name in {"simple_brep", "installed_module"}:
-                draft = json.loads(run(cli, "draft", source.name).stdout)
-                self.assertFalse((work / f"{example_name}_intent.json").exists())
-                self.assertFalse((work / f"{example_name}_printer-profile.json").exists())
-                self.assertFalse((work / f"{example_name}_parameters.json").exists())
-            run(cli, "profile", "--machine", "a1-mini", "--nozzle", "0.4", "--tool", "0", "--out", f"{example_name}_printer-profile.json")
-            run(sys.executable, f"{example_name}_intent.py")
-            intent = work / f"{example_name}_intent.json"
-            intent_hash = sha256(intent.read_bytes()).hexdigest()
-            run(cli, "intent", f"{example_name}_intent.json")
-            if example_name == "installed_module":
-                bound_draft = json.loads(run(cli, "draft", source.name, "--intent", f"{example_name}_intent.json").stdout)
-                self.assertEqual(bound_draft["status"], "draft")
-                self.assertEqual(bound_draft["objects"], draft["objects"])
-                self.assertEqual(sha256(source.read_bytes()).hexdigest(), source_hash)
-            if draft is not None:
-                self.assertEqual(draft["status"], "draft")
-                self.assertNotIn("deliveryReady", draft)
-                self.assertFalse(list(work.glob("*_report.json")))
-                self.assertFalse(list(work.glob("*_scene.json")))
-            run(cli, "compile", f"{example_name}_scene.json", "--intent", f"{example_name}_intent.json", "--source", source.name, "--output-dir", ".")
-            self.assertEqual(sha256(source.read_bytes()).hexdigest(), source_hash)
-            self.assertEqual(sha256(intent.read_bytes()).hexdigest(), intent_hash)
+        `drafts` additionally runs the two draft builds the draft contract is
+        asserted on (each one rebuilds the whole model, ~5 s per example here).
+        A variant whose test only reads the final compile turns it off; the draft
+        contract stays covered by the unmodified `simple_brep` and
+        `installed_module` variants.
+        """
+        key = (example_name, source_changes, intent_changes, drafts)
+        entry = _COMPILED_EXAMPLES.get(key)
+        if entry is None:
+            directory = tempfile.TemporaryDirectory(dir=self.staging_root())
+            _CACHED_DIRECTORIES.append(directory)
+            root = Path(directory.name)
+            work = root / "work"
+            work.mkdir()
+            self._compile_example_into(work, example_name, source_changes, intent_changes, drafts)
+            pristine = root / "pristine"
+            shutil.copytree(work, pristine)
+            entry = (work, pristine)
+            _COMPILED_EXAMPLES[key] = entry
+        work, pristine = entry
+        if not mutable:
             yield work
+            return
+        _restore_workspace(work, pristine)
+        try:
+            yield work
+        finally:
+            _restore_workspace(work, pristine)
+
+    @staticmethod
+    def staging_root():
+        directory = ROOT / "workspace" / "skill-validation"
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory
+
+    def _compile_example_into(self, work, example_name, source_changes, intent_changes, drafts):
+        env = example_env()
+
+        def run(*args):
+            # Full compiles own per-stage deadlines; the CI job is the outer
+            # safety boundary. Short setup/draft commands retain a local cap.
+            timeout = None if len(args) > 1 and args[1] == "compile" else 120
+            result = subprocess.run(
+                args,
+                cwd=work,
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=timeout,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout[-5000:] + result.stderr[-1000:])
+            return result
+
+        cli = str(ROOT / "bin" / "a3d")
+        for name in (f"{example_name}_intent.py", f"{example_name}_build.py"):
+            shutil.copyfile(SKILL / "examples" / name, work / name)
+        for suffix, changes in (("build", source_changes), ("intent", intent_changes)):
+            path = work / f"{example_name}_{suffix}.py"
+            text = path.read_text()
+            for before, after in changes:
+                self.assertIn(before, text)
+                text = text.replace(before, after)
+            path.write_text(text)
+        source = work / f"{example_name}_build.py"
+        source_hash = sha256(source.read_bytes()).hexdigest()
+        draft = None
+        if drafts and example_name in {"simple_brep", "installed_module"}:
+            draft = json.loads(run(cli, "draft", source.name).stdout)
+            self.assertFalse((work / f"{example_name}_intent.json").exists())
+            self.assertFalse((work / f"{example_name}_printer-profile.json").exists())
+            self.assertFalse((work / f"{example_name}_parameters.json").exists())
+        run(cli, "profile", "--machine", "a1-mini", "--nozzle", "0.4", "--tool", "0", "--out", f"{example_name}_printer-profile.json")
+        run(sys.executable, f"{example_name}_intent.py")
+        intent = work / f"{example_name}_intent.json"
+        intent_hash = sha256(intent.read_bytes()).hexdigest()
+        run(cli, "intent", f"{example_name}_intent.json")
+        if draft is not None and example_name == "installed_module":
+            bound_draft = json.loads(run(cli, "draft", source.name, "--intent", f"{example_name}_intent.json").stdout)
+            self.assertEqual(bound_draft["status"], "draft")
+            self.assertEqual(bound_draft["objects"], draft["objects"])
+            self.assertEqual(sha256(source.read_bytes()).hexdigest(), source_hash)
+        if draft is not None:
+            self.assertEqual(draft["status"], "draft")
+            self.assertNotIn("deliveryReady", draft)
+            self.assertFalse(list(work.glob("*_report.json")))
+            self.assertFalse(list(work.glob("*_scene.json")))
+        run(cli, "compile", f"{example_name}_scene.json", "--intent", f"{example_name}_intent.json", "--source", source.name, "--output-dir", ".")
+        self.assertEqual(sha256(source.read_bytes()).hexdigest(), source_hash)
+        self.assertEqual(sha256(intent.read_bytes()).hexdigest(), intent_hash)
 
     def test_example_compiles_with_measured_interface_and_five_views(self):
         with self.compile_example("assembly") as work:
@@ -217,7 +289,7 @@ print(json.dumps([P['width'], P['module_width']]))
             ('width 50 x height 30 x depth 5 mm', 'width 54 x height 34 x depth 5 mm'),
         )
         with self.compile_example("installed_module", source_changes=source_changes,
-                                  intent_changes=intent_changes) as work:
+                                  intent_changes=intent_changes, drafts=False, mutable=True) as work:
             result = json.loads((work / "installed-module_compile-result.json").read_text())
             self.assertTrue(result["pass"], result.get("issues"))
             assembly = import_step(work / "installed-module-assemble.step")
@@ -275,6 +347,8 @@ print(json.dumps([P['width'], P['module_width']]))
                     '\ndef interval_box(',
                     f'\nP["cover_thickness"] = {thickness!r}\n\ndef interval_box(',
                 ),),
+                drafts=False,
+                mutable=True,
             ) as work:
                 result = json.loads((work / "installed-module_compile-result.json").read_text())
                 self.assertTrue(result["pass"], result.get("issues"))
@@ -324,12 +398,101 @@ print(json.dumps([P['width'], P['module_width']]))
                     "intent_sha256": sha256((work / "installed_module_intent.json").read_bytes()).hexdigest(),
                 }, indent=2) + "\n")
 
-    def test_surface_shell_recompiles_changed_walls_without_rewriting_intent(self):
+    def run_example_cli(self, work, *args, expect=0):
+        """Run the real CLI inside one example workspace and return its result."""
+        # Full compiles own per-stage deadlines; setup and draft keep a local cap.
+        timeout = None if args and args[0] == "compile" else 120
+        completed = subprocess.run(
+            [str(ROOT / "bin" / "a3d"), *args], cwd=work, env=example_env(),
+            capture_output=True, text=True, encoding="utf-8", timeout=timeout,
+        )
+        self.assertEqual(completed.returncode, expect, completed.stdout[-5000:] + completed.stderr[-1000:])
+        return completed
+
+    def surface_shell_baseline(self):
+        """Measure the pristine surface-shell compile once for every reader.
+
+        Measuring is a real STEP import plus triangle-level probing (~35 s), so
+        the tests that derive from the same bytes reuse one measurement instead
+        of repeating it.
+        """
+        baseline = _BASELINE_MEASUREMENTS.get("surface-shell")
+        if baseline is None:
+            with self.compile_example("surface_shell") as work:
+                intent_hash = sha256((work / "surface_shell_intent.json").read_bytes()).hexdigest()
+                baseline = self.measure_surface_shell(work, 3.0, intent_hash)
+            _BASELINE_MEASUREMENTS["surface-shell"] = baseline
+        return baseline
+
+    def measure_surface_shell(self, work, inset, intent_hash):
+        """Re-read one surface-shell workspace and probe its exported artifacts."""
+        intent_path = work / "surface_shell_intent.json"
+        source_path = work / "surface_shell_build.py"
+        scene_path = work / "surface_shell_scene.json"
+        result = json.loads((work / "surface-shell_compile-result.json").read_text())
+        self.assertTrue(result["pass"], result.get("issues"))
+        report_path = work / "surface-shell_report.json"
+        report = json.loads(report_path.read_text())
+        self.assertEqual(report["backend"], "brep-part")
+        report_hash = sha256(report_path.read_bytes()).hexdigest()
+        self.assertEqual(result["artifacts"]["buildReport"]["sha256"], report_hash)
+        scene = json.loads(scene_path.read_text())
+        self.assertEqual(sha256(intent_path.read_bytes()).hexdigest(), intent_hash)
+        self.assertEqual(scene["intentRef"]["sha256"], intent_hash)
+        for name, path in (("intent", intent_path), ("source", source_path), ("scene", scene_path)):
+            self.assertEqual(Path(report["inputs"][name]["path"]).resolve(), path.resolve())
+            self.assertEqual(report["inputs"][name]["sha256"], sha256(path.read_bytes()).hexdigest())
+
+        exports = {}
+        for kind in ("step", "stl"):
+            record = report["artifacts"][f"{kind}:surface-shell"]
+            path = Path(record["path"])
+            if not path.is_absolute():
+                path = work / path
+            self.assertEqual(record["sha256"], sha256(path.read_bytes()).hexdigest())
+            exports[kind] = path
+        audit_record = result["artifacts"]["stepAudit:surface-shell"]
+        audit_path = Path(audit_record["path"])
+        self.assertEqual(audit_record["sha256"], sha256(audit_path.read_bytes()).hexdigest())
+        audit = json.loads(audit_path.read_text())
+        self.assertEqual(audit["step"]["sha256"], sha256(exports["step"].read_bytes()).hexdigest())
+        section = next(check for check in audit["checks"]
+                       if check["name"] == "section:shell-surface:0:width_u_mm")
+        self.assertTrue(section["pass"], section)
+        self.assertEqual(section["expected"]["value_mm"], 82)
+        self.assertAlmostEqual(section["observed"]["actual_mm"], 82, places=4)
+        solid = import_step(exports["step"])
+        self.assertTrue(solid.is_valid)
+        self.assertEqual(len(solid.solids()), 1)
+        bounds = solid.bounding_box()
+        np.testing.assert_allclose(tuple(bounds.size), [100, 80, 90], atol=1e-5)
+        # Probe the imported STEP, independently of source assertions: there is
+        # material below the cavity and no central top cap.
+        self.assertTrue(solid.is_inside((0, 0, 1.5)))
+        self.assertFalse(solid.is_inside((0, 0, 3.1)))
+        self.assertFalse(solid.is_inside((2, -1, 89.9)))
+
+        mesh = trimesh.load(exports["stl"], force="mesh")
+        transform = report["coordinateFrames"]["part-print"]["partTransforms"]["surface-shell"]
+        mesh.apply_transform(np.linalg.inv(np.asarray(transform, dtype=float)))
+        self.assertTrue(mesh.is_volume)
+        self.assertEqual(len(mesh.split()), 1)
+        np.testing.assert_allclose(mesh.extents, [100, 80, 90], atol=1e-5)
+        origins = [[x, y, 100] for x, y in ((0, 0), (-15, -10), (-15, 10), (15, -10), (15, 10))]
+        locations, rays, _ = mesh.ray.intersects_location(origins, [[0, 0, -1]] * len(origins), multiple_hits=True)
+        for ray in range(len(origins)):
+            # A broad cavity stays open to its 3 mm floor; changing the inset
+            # may shrink the rim opening, but must not close it.
+            np.testing.assert_allclose(sorted(locations[rays == ray, 2]), [0, 3], atol=1e-5)
+        walls, _, _ = mesh.ray.intersects_location([[100, 0, 45]], [[-1, 0, 0]], multiple_hits=True)
+        np.testing.assert_allclose(sorted(walls[:, 0]), [-50, -50 + inset, 50 - inset, 50], atol=1e-5)
+        return {"volume": solid.volume, "bounds": np.array([tuple(bounds.min), tuple(bounds.max)]),
+                "runId": result["runId"], "sourceHash": report["inputs"]["source"]["sha256"],
+                "sceneHash": report["inputs"]["scene"]["sha256"], "reportHash": report_hash}
+
+    def test_surface_shell_compiles_with_measured_width_and_open_cavity(self):
         with self.compile_example("surface_shell") as work:
             intent_path = work / "surface_shell_intent.json"
-            source_path = work / "surface_shell_build.py"
-            scene_path = work / "surface_shell_scene.json"
-            intent_hash = sha256(intent_path.read_bytes()).hexdigest()
             intent = json.loads(intent_path.read_text())
             top_width = intent["features"][0]["section_dimensions"][0]["outer_envelope"]["width_u_mm"]
             for dimension in (*intent["dimensions_mm"].values(), top_width):
@@ -337,71 +500,14 @@ print(json.dumps([P['width'], P['module_width']]))
                 self.assertAlmostEqual(dimension["constraint"]["min_mm"], dimension["value"] - 0.1)
                 self.assertAlmostEqual(dimension["constraint"]["max_mm"], dimension["value"] + 0.1)
 
-            def read_and_measure(inset):
-                result = json.loads((work / "surface-shell_compile-result.json").read_text())
-                self.assertTrue(result["pass"], result.get("issues"))
-                report_path = work / "surface-shell_report.json"
-                report = json.loads(report_path.read_text())
-                self.assertEqual(report["backend"], "brep-part")
-                report_hash = sha256(report_path.read_bytes()).hexdigest()
-                self.assertEqual(result["artifacts"]["buildReport"]["sha256"], report_hash)
-                scene = json.loads(scene_path.read_text())
-                self.assertEqual(sha256(intent_path.read_bytes()).hexdigest(), intent_hash)
-                self.assertEqual(scene["intentRef"]["sha256"], intent_hash)
-                for name, path in (("intent", intent_path), ("source", source_path), ("scene", scene_path)):
-                    self.assertEqual(Path(report["inputs"][name]["path"]).resolve(), path.resolve())
-                    self.assertEqual(report["inputs"][name]["sha256"], sha256(path.read_bytes()).hexdigest())
+            intent_hash = sha256(intent_path.read_bytes()).hexdigest()
+            baseline = self.surface_shell_baseline()
+            np.testing.assert_allclose(baseline["bounds"][1] - baseline["bounds"][0], [100, 80, 90], atol=1e-5)
+            self.assertEqual(sha256(intent_path.read_bytes()).hexdigest(), intent_hash)
 
-                exports = {}
-                for kind in ("step", "stl"):
-                    record = report["artifacts"][f"{kind}:surface-shell"]
-                    path = Path(record["path"])
-                    if not path.is_absolute():
-                        path = work / path
-                    self.assertEqual(record["sha256"], sha256(path.read_bytes()).hexdigest())
-                    exports[kind] = path
-                audit_record = result["artifacts"]["stepAudit:surface-shell"]
-                audit_path = Path(audit_record["path"])
-                self.assertEqual(audit_record["sha256"], sha256(audit_path.read_bytes()).hexdigest())
-                audit = json.loads(audit_path.read_text())
-                self.assertEqual(audit["step"]["sha256"], sha256(exports["step"].read_bytes()).hexdigest())
-                section = next(check for check in audit["checks"]
-                               if check["name"] == "section:shell-surface:0:width_u_mm")
-                self.assertTrue(section["pass"], section)
-                self.assertEqual(section["expected"]["value_mm"], 82)
-                self.assertAlmostEqual(section["observed"]["actual_mm"], 82, places=4)
-                solid = import_step(exports["step"])
-                self.assertTrue(solid.is_valid)
-                self.assertEqual(len(solid.solids()), 1)
-                bounds = solid.bounding_box()
-                np.testing.assert_allclose(tuple(bounds.size), [100, 80, 90], atol=1e-5)
-                # Probe the imported STEP, independently of source assertions:
-                # there is material below the cavity and no central top cap.
-                self.assertTrue(solid.is_inside((0, 0, 1.5)))
-                self.assertFalse(solid.is_inside((0, 0, 3.1)))
-                self.assertFalse(solid.is_inside((2, -1, 89.9)))
-
-                mesh = trimesh.load(exports["stl"], force="mesh")
-                transform = report["coordinateFrames"]["part-print"]["partTransforms"]["surface-shell"]
-                mesh.apply_transform(np.linalg.inv(np.asarray(transform, dtype=float)))
-                self.assertTrue(mesh.is_volume)
-                self.assertEqual(len(mesh.split()), 1)
-                np.testing.assert_allclose(mesh.extents, [100, 80, 90], atol=1e-5)
-                origins = [[x, y, 100] for x, y in ((0, 0), (-15, -10), (-15, 10), (15, -10), (15, 10))]
-                locations, rays, _ = mesh.ray.intersects_location(origins, [[0, 0, -1]] * len(origins), multiple_hits=True)
-                for ray in range(len(origins)):
-                    # A broad cavity stays open to its 3 mm floor; changing the
-                    # inset may shrink the rim opening, but must not close it.
-                    np.testing.assert_allclose(sorted(locations[rays == ray, 2]), [0, 3], atol=1e-5)
-                walls, _, _ = mesh.ray.intersects_location([[100, 0, 45]], [[-1, 0, 0]], multiple_hits=True)
-                np.testing.assert_allclose(sorted(walls[:, 0]), [-50, -50 + inset, 50 - inset, 50], atol=1e-5)
-                return {"volume": solid.volume, "bounds": np.array([tuple(bounds.min), tuple(bounds.max)]),
-                        "runId": result["runId"], "sourceHash": report["inputs"]["source"]["sha256"],
-                        "sceneHash": report["inputs"]["scene"]["sha256"], "reportHash": report_hash}
-
-            first = read_and_measure(3.0)
             # The ordinary-process callback must rebuild actual geometry, including
-            # coupling from the offset z62 profile which fixes the lower Y bound.
+            # coupling from the offset z62 profile which fixes the lower Y bound,
+            # without rewriting the files the compile already produced.
             callback = subprocess.run([sys.executable, "-B", "-c", '''
 import json
 from pathlib import Path
@@ -411,14 +517,21 @@ actual = measure_finished([100, 79.6, 81.8]).tolist()
 assert before == {str(p): p.read_bytes() for p in Path('.').rglob('*') if p.is_file()}
 print(json.dumps(actual))
 '''], cwd=work,
-                env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME),
-                     "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUTF8": "1"},
+                env=example_env(PYTHONUTF8="1"),
                 capture_output=True, text=True, encoding="utf-8", timeout=120)
             self.assertEqual(callback.returncode, 0, callback.stdout + callback.stderr)
             np.testing.assert_allclose(json.loads(callback.stdout), [100, 79.8, 81.8], atol=1e-5)
+            self.assertEqual(sha256(intent_path.read_bytes()).hexdigest(), intent_hash)
+
+    def test_surface_shell_recompiles_changed_walls_without_rewriting_intent(self):
+        baseline = self.surface_shell_baseline()
+        with self.compile_example("surface_shell", mutable=True) as work:
+            intent_path = work / "surface_shell_intent.json"
+            source_path = work / "surface_shell_build.py"
+            intent_hash = sha256(intent_path.read_bytes()).hexdigest()
             source = source_path.read_text()
-            # Change only the named numeric parameter, preserving all other
-            # source text and the already-created immutable intent document.
+            # Change only the named numeric parameter, preserving all other source
+            # text and the already-created immutable intent document.
             values = []
             for assignment in ast.walk(ast.parse(source)):
                 if not isinstance(assignment, ast.Assign):
@@ -438,22 +551,21 @@ print(json.dumps(actual))
             end = sum(map(len, lines[:value.end_lineno - 1])) + value.end_col_offset
             source_path.write_bytes(source.encode()[:start] + b"4.0" + source.encode()[end:])
             self.assertEqual(sha256(intent_path.read_bytes()).hexdigest(), intent_hash)
-            result = subprocess.run(
-                [str(ROOT / "bin" / "a3d"), "compile", scene_path.name,
-                 "--intent", intent_path.name,
-                 "--source", source_path.name, "--output-dir", "."],
-                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME), "PYTHONDONTWRITEBYTECODE": "1"},
-                capture_output=True, text=True, encoding="utf-8",
-            )
-            self.assertEqual(result.returncode, 0, result.stdout[-5000:] + result.stderr[-1000:])
-            second = read_and_measure(4.0)
-            self.assertGreater(second["volume"], first["volume"] + 1.0)
-            np.testing.assert_allclose(second["bounds"], first["bounds"], atol=1e-5)
+            self.run_example_cli(work, "compile", "surface_shell_scene.json", "--intent", "surface_shell_intent.json",
+                                 "--source", "surface_shell_build.py", "--output-dir", ".")
+            second = self.measure_surface_shell(work, 4.0, intent_hash)
+            self.assertGreater(second["volume"], baseline["volume"] + 1.0)
+            np.testing.assert_allclose(second["bounds"], baseline["bounds"], atol=1e-5)
             for key in ("runId", "sourceHash", "sceneHash", "reportHash"):
-                self.assertNotEqual(second[key], first[key], key)
+                self.assertNotEqual(second[key], baseline[key], key)
 
+    def test_surface_shell_finishing_edit_previews_but_fails_final_acceptance(self):
+        with self.compile_example("surface_shell", mutable=True) as work:
+            intent_path = work / "surface_shell_intent.json"
+            source_path = work / "surface_shell_build.py"
+            intent_hash = sha256(intent_path.read_bytes()).hexdigest()
             # A finishing edit changes the actual top section while the overall
-            # bounds and immutable target stay unchanged. Preview is allowed;
+            # bounds and the immutable target stay unchanged. Preview is allowed;
             # final acceptance must fail against the exported STEP itself.
             finishing = '''    from cad_helpers import checked_fillet
     build.finish("surface-shell", lambda body: checked_fillet(
@@ -464,22 +576,12 @@ print(json.dumps(actual))
             marker = "    # Any finishing belongs here"
             self.assertEqual(source.count(marker), 1)
             source_path.write_text(source.replace(marker, finishing + "\n" + marker))
-            result = subprocess.run(
-                [str(ROOT / "bin" / "a3d"), "draft", source_path.name, "--intent", intent_path.name],
-                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME), "PYTHONDONTWRITEBYTECODE": "1"},
-                capture_output=True, text=True, encoding="utf-8", timeout=120,
-            )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            draft = json.loads(result.stdout)
+            preview = self.run_example_cli(work, "draft", source_path.name, "--intent", intent_path.name)
+            draft = json.loads(preview.stdout)
             self.assertEqual(draft["status"], "draft")
             self.assertNotIn("deliveryReady", draft)
-            result = subprocess.run(
-                [str(ROOT / "bin" / "a3d"), "compile", scene_path.name, "--intent", intent_path.name,
-                 "--source", source_path.name, "--output-dir", "."],
-                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME), "PYTHONDONTWRITEBYTECODE": "1"},
-                capture_output=True, text=True, encoding="utf-8",
-            )
-            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.run_example_cli(work, "compile", "surface_shell_scene.json", "--intent", "surface_shell_intent.json",
+                                 "--source", "surface_shell_build.py", "--output-dir", ".", expect=1)
             failed = json.loads((work / "surface-shell_compile-result.json").read_text())
             self.assertFalse(failed["pass"])
             audit_record = failed["artifacts"]["stepAudit:surface-shell"]
@@ -495,21 +597,21 @@ print(json.dumps(actual))
             np.testing.assert_allclose(audit["bounds_mm"]["size"], [100, 80, 90], atol=1e-5)
             self.assertEqual(sha256(intent_path.read_bytes()).hexdigest(), intent_hash)
 
+    def test_surface_shell_rejects_semantic_envelope_drift(self):
+        with self.compile_example("surface_shell", mutable=True) as work:
+            intent_path = work / "surface_shell_intent.json"
+            source_path = work / "surface_shell_build.py"
+            intent_hash = sha256(intent_path.read_bytes()).hexdigest()
             # Drift outside the agreed +/-0.1 mm envelope is rejected during
-            # export. The offset neighbouring profile makes the Y envelope
-            # grow by only half this station's depth change.
-            # Absence of a later section audit does not mean it passed.
+            # export. The offset neighbouring profile makes the Y envelope grow
+            # by only half this station's depth change, and the absence of a
+            # later section audit does not mean the section passed.
             station = "(30.0, 100.0, 80.0, 14.0, 0.0, 0.0)"
             source = source_path.read_text()
             self.assertEqual(source.count(station), 1)
             source_path.write_text(source.replace(station, "(30.0, 100.2, 80.4, 14.0, 0.0, 0.0)"))
-            result = subprocess.run(
-                [str(ROOT / "bin" / "a3d"), "compile", scene_path.name, "--intent", intent_path.name,
-                 "--source", source_path.name, "--output-dir", "."],
-                cwd=work, env={**os.environ, "AMAGINE3D_SKILL_DIR": str(SKILL), "AMAGINE3D_RUNTIME_DIR": str(RUNTIME), "PYTHONPATH": str(RUNTIME), "PYTHONDONTWRITEBYTECODE": "1"},
-                capture_output=True, text=True, encoding="utf-8",
-            )
-            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.run_example_cli(work, "compile", "surface_shell_scene.json", "--intent", "surface_shell_intent.json",
+                                 "--source", "surface_shell_build.py", "--output-dir", ".", expect=1)
             failed = json.loads((work / "surface-shell_compile-result.json").read_text())
             self.assertFalse(failed["pass"])
             self.assertTrue(any(issue["stage"] == "source" for issue in failed["issues"]), failed["issues"])
