@@ -182,7 +182,6 @@ export interface ChatPanelProps {
   language: Language;
   messages: ChatMessage[];
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  onNewProject: () => void;
   onPromptChange: (prompt: string) => void;
   onRemoveImage: (id: string) => void;
   onSelectImages: (event: ChangeEvent<HTMLInputElement>) => void;
@@ -201,7 +200,6 @@ export function ChatPanel({
   language,
   messages,
   onKeyDown,
-  onNewProject,
   onPromptChange,
   onRemoveImage,
   onSelectImages,
@@ -303,16 +301,6 @@ export function ChatPanel({
 
             <div className={composerStyles.composerFooter}>
               <div className={composerStyles.composerTools}>
-                <button
-                  aria-label={text('New project', '新项目')}
-                  className={composerStyles.composerTool}
-                  data-tooltip={text('New project', '新项目')}
-                  disabled={running || busy || sessionLoading}
-                  onClick={onNewProject}
-                  type="button"
-                >
-                  <ToolbarIcon name="new-run" />
-                </button>
                 <label
                   className={composerStyles.composerTool}
                   data-tooltip={text(
@@ -331,30 +319,8 @@ export function ChatPanel({
                     onChange={onSelectImages}
                     type="file"
                   />
-                  <span aria-hidden="true">▧</span>
+                  <ToolbarIcon name="attach" />
                 </label>
-                <button
-                  aria-disabled="true"
-                  aria-label={text(
-                    'Runtime: Codex. This is currently the only available option.',
-                    '运行时：Codex。当前仅支持此选项。',
-                  )}
-                  className={`${composerStyles.composerTool} ${composerStyles.runtimeSelector}`}
-                  data-tooltip={text(
-                    'Runtime · Codex (only option)',
-                    '运行时 · Codex（当前唯一选项）',
-                  )}
-                  type="button"
-                >
-                  <ToolbarIcon name="runtime" />
-                  <span>Codex</span>
-                  <span
-                    aria-hidden="true"
-                    className={composerStyles.runtimeSelectorChevron}
-                  >
-                    ⌄
-                  </span>
-                </button>
               </div>
               <button
                 aria-label={

@@ -2,6 +2,7 @@ import {
   type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useRef,
@@ -9,6 +10,7 @@ import {
 } from 'react';
 
 import styles from './CadWorkbench.module.css';
+import { AppBarControls } from './cad-workbench/AppBarControls';
 import { LeftPanel } from './cad-workbench/LeftPanel';
 import { ParametersPanel } from './cad-workbench/ParametersPanel';
 import { PreviewPanel } from './cad-workbench/PreviewPanel';
@@ -74,6 +76,7 @@ import {
 } from '../types';
 
 interface CadWorkbenchProps {
+  children: (appBarControls: ReactNode) => ReactNode;
   language: Language;
   onStorageOpenChange?: (open: boolean) => void;
   storageOpen: boolean;
@@ -81,6 +84,7 @@ interface CadWorkbenchProps {
 
 const acceptedImageTypes = new Set<string>(ACCEPTED_IMAGE_TYPES);
 export function CadWorkbench({
+  children,
   language,
   onStorageOpenChange,
   storageOpen,
@@ -868,133 +872,141 @@ export function CadWorkbench({
     }
 
     return (
-      <div className={styles.workspace} style={workspaceStyle}>
-        <LeftPanel
-          chat={{
-            busy: parameterBuilding,
-            conversationRef,
-            language,
-            messages,
-            onKeyDown: handleComposerKeyDown,
-            onNewProject: beginFreshRun,
-            onPromptChange: setPrompt,
-            onRemoveImage: (id) =>
-              setPendingImages((current) =>
-                current.filter((image) => image.id !== id),
-              ),
-            onSelectImages: (event) => void selectImages(event),
-            onStop: () => abortRef.current?.abort(),
-            onSubmit: (event) => void submit(event),
-            pendingImages,
-            prompt,
-            running,
-            sessionLoading,
-            textareaRef,
-          }}
-          collapsed={leftCollapsed}
-          connectionStatus={connectionStatus}
-          files={{
-            artifacts,
-            language,
-            loading: storageLoading,
-            onDownload: downloadArtifacts,
-            onRefresh: () => void refreshArtifacts(),
-            onSelect: selectArtifact,
-            selectionScope: sessionId,
-            selectedPath,
-          }}
-          language={language}
-          menuOpen={sessionMenuOpen}
-          onOpenSession={(session) => void openSession(session)}
-          onToggleCollapsed={() =>
-            setLeftCollapsed((collapsed) => !collapsed)
-          }
-          onToggleMenu={() => setSessionMenuOpen((open) => !open)}
-          onViewChange={setLeftView}
-          running={running || parameterBuilding}
-          sessionId={sessionId}
-          sessionLoading={sessionLoading}
-          sessionMenuRef={sessionMenuRef}
-          sessionTitle={sessionTitle}
-          sessions={sessions}
-          view={leftView}
-          workspaceName={artifactWorkspaceName}
-        />
-        <div
-          aria-disabled={leftCollapsed}
-          aria-label={text('Resize conversation panel', '调整对话面板宽度')}
-          className={styles.panelResizer}
-          data-side="left"
-          onPointerDown={(event) => beginSideResize('left', event)}
-          role="separator"
-        >
-          <span aria-hidden="true" />
-        </div>
-
-        <PreviewPanel
-          connectionStatus={connectionStatus}
-          language={language}
-          onTogglePrintPreview={() => setPrintPreview((enabled) => !enabled)}
-          previewArtifact={previewArtifact}
-          printPreview={showingPrintPreview}
-          printPreviewAvailable={Boolean(
-            displayPreviewArtifact && printPreviewArtifact,
-          )}
-          running={running || parameterBuilding}
-          runtimeReady={Boolean(health?.runtimeReady)}
-          selectedArtifact={selectedArtifact}
-          selectedText={selectedText}
-        />
-        <div
-          aria-disabled={rightCollapsed}
-          aria-label={text('Resize parameter panel', '调整参数面板宽度')}
-          className={styles.panelResizer}
-          data-side="right"
-          onPointerDown={(event) => beginSideResize('right', event)}
-          role="separator"
-        >
-          <span aria-hidden="true" />
-        </div>
-
-        <ParametersPanel
-          busy={parameterBuilding || running}
-          collapsed={rightCollapsed}
-          hasParameterModels={parameterModels.length > 0}
-          issue={parameterIssue}
-          language={language}
-          model={activeParameterModel}
-          onCommit={(parameterId) => void commitParameter(parameterId)}
-          onToggle={() => setRightCollapsed((collapsed) => !collapsed)}
-          onValueChange={(parameterId, value) =>
-            setParameterValues((current) => ({
-              ...current,
-              [parameterId]: value,
-            }))
-          }
-          rebuilding={parameterBuilding}
-          values={parameterValues}
-        />
-        {storageOpen ? (
-          <StorageDrawer
-            groups={storageGroups}
+      <>
+        {children(
+          <AppBarControls
+            busy={parameterBuilding}
+            connectionStatus={connectionStatus}
             language={language}
-            loading={storageLoading}
-            onClose={() => onStorageOpenChange?.(false)}
-            onDelete={deleteStorageSelection}
-            onDownload={(targetSessionId, selectedArtifacts) =>
-              downloadArtifactsForSession(
-                targetSessionId,
-                targetSessionId,
-                selectedArtifacts,
-              )
-            }
-            onRefresh={() => void refreshWorkspaceStorage()}
-            onSelect={(targetSession, artifact) =>
-              void selectStorageArtifact(targetSession, artifact)
-            }
+            menuOpen={sessionMenuOpen}
+            onNewProject={beginFreshRun}
+            onOpenSession={(session) => void openSession(session)}
+            onToggleMenu={() => setSessionMenuOpen((open) => !open)}
+            running={running}
+            sessionId={sessionId}
+            sessionLoading={sessionLoading}
+            sessionMenuRef={sessionMenuRef}
             sessionTitle={sessionTitle}
+            sessions={sessions}
+            workspaceName={artifactWorkspaceName}
+          />,
+        )}
+        <div className={styles.workspace} style={workspaceStyle}>
+          <LeftPanel
+            chat={{
+              busy: parameterBuilding,
+              conversationRef,
+              language,
+              messages,
+              onKeyDown: handleComposerKeyDown,
+              onPromptChange: setPrompt,
+              onRemoveImage: (id) =>
+                setPendingImages((current) =>
+                  current.filter((image) => image.id !== id),
+                ),
+              onSelectImages: (event) => void selectImages(event),
+              onStop: () => abortRef.current?.abort(),
+              onSubmit: (event) => void submit(event),
+              pendingImages,
+              prompt,
+              running,
+              sessionLoading,
+              textareaRef,
+            }}
+            collapsed={leftCollapsed}
+            files={{
+              artifacts,
+              language,
+              loading: storageLoading,
+              onDownload: downloadArtifacts,
+              onRefresh: () => void refreshArtifacts(),
+              onSelect: selectArtifact,
+              selectionScope: sessionId,
+              selectedPath,
+            }}
+            language={language}
+            onToggleCollapsed={() =>
+              setLeftCollapsed((collapsed) => !collapsed)
+            }
+            onViewChange={setLeftView}
+            view={leftView}
           />
-        ) : null}
-      </div>
+          <div
+            aria-disabled={leftCollapsed}
+            aria-label={text('Resize conversation panel', '调整对话面板宽度')}
+            className={styles.panelResizer}
+            data-side="left"
+            onPointerDown={(event) => beginSideResize('left', event)}
+            role="separator"
+          >
+            <span aria-hidden="true" />
+          </div>
+
+          <PreviewPanel
+            connectionStatus={connectionStatus}
+            language={language}
+            onTogglePrintPreview={() => setPrintPreview((enabled) => !enabled)}
+            previewArtifact={previewArtifact}
+            printPreview={showingPrintPreview}
+            printPreviewAvailable={Boolean(
+              displayPreviewArtifact && printPreviewArtifact,
+            )}
+            running={running || parameterBuilding}
+            runtimeReady={Boolean(health?.runtimeReady)}
+            selectedArtifact={selectedArtifact}
+            selectedText={selectedText}
+          />
+          <div
+            aria-disabled={rightCollapsed}
+            aria-label={text('Resize parameter panel', '调整参数面板宽度')}
+            className={styles.panelResizer}
+            data-side="right"
+            onPointerDown={(event) => beginSideResize('right', event)}
+            role="separator"
+          >
+            <span aria-hidden="true" />
+          </div>
+
+          <ParametersPanel
+            busy={parameterBuilding || running}
+            collapsed={rightCollapsed}
+            hasParameterModels={parameterModels.length > 0}
+            issue={parameterIssue}
+            language={language}
+            model={activeParameterModel}
+            onCommit={(parameterId) => void commitParameter(parameterId)}
+            onToggle={() => setRightCollapsed((collapsed) => !collapsed)}
+            onValueChange={(parameterId, value) =>
+              setParameterValues((current) => ({
+                ...current,
+                [parameterId]: value,
+              }))
+            }
+            rebuilding={parameterBuilding}
+            values={parameterValues}
+          />
+          {storageOpen ? (
+            <StorageDrawer
+              groups={storageGroups}
+              language={language}
+              loading={storageLoading}
+              onClose={() => onStorageOpenChange?.(false)}
+              onDelete={deleteStorageSelection}
+              onDownload={(targetSessionId, selectedArtifacts) =>
+                downloadArtifactsForSession(
+                  targetSessionId,
+                  targetSessionId,
+                  selectedArtifacts,
+                )
+              }
+              onRefresh={() => void refreshWorkspaceStorage()}
+              onSelect={(targetSession, artifact) =>
+                void selectStorageArtifact(targetSession, artifact)
+              }
+              sessionTitle={sessionTitle}
+            />
+          ) : null}
+        </div>
+      </>
     );
 }
