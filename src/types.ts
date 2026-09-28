@@ -1,5 +1,11 @@
+import type {
+  CadSystem,
+  CadSystemAvailability,
+} from '@amagine3d/a3d-runtime';
+
 export const API_VERSION = 11;
 export const BUNDLED_POMODORO_SESSION_ID = 'builtin:amagine3d-pomodoro';
+export type { CadSystem, CadSystemAvailability };
 export const ACCEPTED_IMAGE_TYPES = [
   'image/png',
   'image/jpeg',
@@ -146,6 +152,7 @@ export interface ParameterBuildResult
 export type SessionKind = 'builtin' | 'user';
 
 export interface SessionSummary {
+  cadSystem?: CadSystem;
   createdAt: string;
   id: string;
   kind: SessionKind;
@@ -181,6 +188,7 @@ export interface PythonHealth {
 
 export interface HealthResponse {
   apiVersion: number;
+  cadSystems: Record<CadSystem, CadSystemAvailability>;
   configured: boolean;
   model: string;
   python: PythonHealth;

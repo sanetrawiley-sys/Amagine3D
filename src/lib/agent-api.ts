@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   ArtifactCollection,
+  CadSystem,
   ChatTaskType,
   HealthResponse,
   ImageAttachment,
@@ -14,6 +15,7 @@ import type {
 import { trpc } from './trpc-client';
 
 interface StreamAgentOptions {
+  cadSystem?: CadSystem;
   images: ImageAttachment[];
   message: string;
   onEvent: (event: AgentEvent) => void;
@@ -132,6 +134,7 @@ export async function trashStorageSessions(sessionIds: string[]): Promise<void> 
 }
 
 export async function streamAgent({
+  cadSystem,
   images,
   message,
   onEvent,
@@ -141,6 +144,7 @@ export async function streamAgent({
 }: StreamAgentOptions): Promise<void> {
   const response = await fetch('/api/chat', {
     body: JSON.stringify({
+      ...(cadSystem ? { cadSystem } : {}),
       images,
       message,
       sessionId,

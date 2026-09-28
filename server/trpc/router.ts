@@ -1,6 +1,11 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 
 import {
+  cadSystemAvailability,
+  listCadSystems,
+} from '@amagine3d/a3d-runtime';
+
+import {
   API_VERSION,
   BUNDLED_POMODORO_SESSION_ID,
   type HealthResponse,
@@ -36,8 +41,19 @@ const t = initTRPC.context<TrpcContext>().create();
 
 function healthResponse(context: TrpcContext): HealthResponse {
   const { python, runtime, runtimeError } = context;
+  const availability = {
+    pythonReady: python.ready,
+    runtimeError,
+    runtimeReady: Boolean(runtime),
+  };
   return {
     apiVersion: API_VERSION,
+    cadSystems: Object.fromEntries(
+      listCadSystems().map((system) => [
+        system,
+        cadSystemAvailability(system, availability),
+      ]),
+    ) as HealthResponse['cadSystems'],
     configured: runtime?.configured ?? false,
     model: process.env.LLM_MODEL?.trim() || 'openai/gpt-5.5',
     python,

@@ -1,3 +1,5 @@
+import { isCadSystem, type CadSystem } from '@amagine3d/a3d-runtime';
+
 import {
   ACCEPTED_IMAGE_TYPES,
   MAX_IMAGE_BYTES,
@@ -24,6 +26,7 @@ export function parseModelSpec(value: string): ModelSpec {
 }
 
 export interface ChatRequest {
+  cadSystem?: CadSystem;
   images?: ImageAttachment[];
   message: string;
   sessionId: string;
@@ -70,6 +73,7 @@ export function isChatRequest(value: unknown): value is ChatRequest {
       MAX_TOTAL_IMAGE_BYTES &&
     (candidate.message.trim().length > 0 || images.length > 0) &&
     (candidate.taskType === 'cad' || candidate.taskType === 'chat') &&
+    (candidate.cadSystem === undefined || isCadSystem(candidate.cadSystem)) &&
     typeof candidate.sessionId === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
       candidate.sessionId,

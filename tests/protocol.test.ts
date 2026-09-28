@@ -16,6 +16,24 @@ test('accepts a valid chat request', () => {
   );
   assert.equal(
     isChatRequest({
+      cadSystem: 'a3d-text',
+      message: '创建一个 CAD 零件',
+      sessionId: '3b0d4f25-1707-4cc8-92cf-6f5c28edfc93',
+      taskType: 'cad',
+    }),
+    true,
+  );
+  assert.equal(
+    isChatRequest({
+      cadSystem: 'a3d-blender',
+      message: '创建一个 CAD 零件',
+      sessionId: '3b0d4f25-1707-4cc8-92cf-6f5c28edfc93',
+      taskType: 'cad',
+    }),
+    false,
+  );
+  assert.equal(
+    isChatRequest({
       message: '搜索产品尺寸后建模',
       sessionId: '3b0d4f25-1707-4cc8-92cf-6f5c28edfc93',
       taskType: 'cad',

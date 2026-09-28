@@ -3,6 +3,13 @@ import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
+  cadSystemDescriptor,
+  DEFAULT_CAD_SYSTEM,
+  isCadSystem,
+  type CadSystem,
+} from '@amagine3d/a3d-runtime';
+
+import {
   BUNDLED_POMODORO_SESSION_ID,
   type ArtifactCollection,
   type ChatMessage,
@@ -20,6 +27,7 @@ const SESSION_VERSION = 1;
 const BUILTIN_CREATED_AT = '2026-08-19T15:34:44.000Z';
 
 interface StoredSession {
+  cadSystem?: CadSystem;
   codexThreadId?: string;
   createdAt: string;
   id: string;
@@ -68,6 +76,7 @@ function validStoredSession(value: unknown): value is StoredSession {
     typeof item.createdAt === 'string' &&
     typeof item.updatedAt === 'string' &&
     Array.isArray(item.messages) &&
+    (item.cadSystem === undefined || isCadSystem(item.cadSystem)) &&
     (item.codexThreadId === undefined || typeof item.codexThreadId === 'string')
   );
 }
@@ -103,6 +112,7 @@ async function loadOrCreateSession(
   if (existing) return existing;
   const timestamp = new Date().toISOString();
   return {
+    cadSystem: DEFAULT_CAD_SYSTEM,
     createdAt: timestamp,
     id: sessionId,
     messages: [],
@@ -116,6 +126,7 @@ function summary(session: StoredSession): SessionSummary {
     (message) => message.role === 'user',
   );
   return {
+    cadSystem: session.cadSystem ?? DEFAULT_CAD_SYSTEM,
     createdAt: session.createdAt,
     id: session.id,
     kind: 'user',
@@ -164,8 +175,17 @@ export async function appendSessionUserMessage(
   sessionRoot: string,
   sessionId: string,
   text: string,
+  cadSystem: CadSystem = DEFAULT_CAD_SYSTEM,
 ): Promise<void> {
   const session = await loadOrCreateSession(sessionRoot, sessionId);
+  if (session.messages.length > 0) {
+    // Existing history locks to one system. A missing field is legacy default.
+    const locked = session.cadSystem ?? DEFAULT_CAD_SYSTEM;
+    if (locked !== cadSystem) {
+      throw new Error('This session already uses a different CAD system.');
+    }
+  }
+  session.cadSystem = cadSystem;
   session.messages.push({ id: randomUUID(), role: 'user', text });
   session.updatedAt = new Date().toISOString();
   await writeStoredSession(sessionRoot, session);
@@ -180,6 +200,27 @@ export async function appendSessionAssistantTurn(
   session.messages.push({ id: randomUUID(), role: 'assistant', ...turn });
   session.updatedAt = new Date().toISOString();
   await writeStoredSession(sessionRoot, session);
+}
+
+export async function sessionCadSystem(
+  sessionRoot: string,
+  sessionId: string,
+  requested: CadSystem = DEFAULT_CAD_SYSTEM,
+): Promise<CadSystem> {
+  const session = await readStoredSession(sessionPath(sessionRoot, sessionId));
+  if (!session) {
+    cadSystemDescriptor(requested);
+    return requested;
+  }
+  // Existing sessions keep one system. A missing field is legacy default.
+  const effective = session.cadSystem ?? DEFAULT_CAD_SYSTEM;
+  if (requested !== effective) {
+    throw new Error(
+      'This session uses a different CAD system. Start a new project to switch systems.',
+    );
+  }
+  cadSystemDescriptor(effective);
+  return effective;
 }
 
 export async function readSessionThreadId(

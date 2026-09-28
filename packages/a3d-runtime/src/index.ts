@@ -1,4 +1,15 @@
 export {
+  cadSystemAvailability,
+  cadSystemDescriptor,
+  DEFAULT_CAD_SYSTEM,
+  isCadSystem,
+  listCadSystems,
+  type CadRuntimeRequirement,
+  type CadSystem,
+  type CadSystemAvailability,
+  type CadSystemDescriptor,
+} from './cad-systems.ts';
+export {
   isRuntimeProgressEvent,
   type RuntimeEvent,
   type RuntimeItem,

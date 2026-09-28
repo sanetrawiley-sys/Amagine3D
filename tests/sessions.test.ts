@@ -12,6 +12,7 @@ import {
   listSessionCatalog,
   readSessionMessages,
   readSessionThreadId,
+  sessionCadSystem,
   setSessionThreadId,
   sessionWorkspaceRoot,
   userSessionArtifacts,
@@ -72,9 +73,65 @@ test('persists product messages and the Codex thread id without legacy agent his
     const catalog = await listSessionCatalog(sessionRoot);
     assert.equal(catalog.initialSessionId, SESSION_ID);
     assert.equal(catalog.sessions[0]?.title, '生成一个桌面支架');
+    assert.equal(catalog.sessions[0]?.cadSystem, 'a3d-text');
+    assert.equal(await sessionCadSystem(sessionRoot, SESSION_ID), 'a3d-text');
     assert.equal(await readSessionThreadId(sessionRoot, SESSION_ID), 'codex-thread-1');
     const messages = await readSessionMessages(join(sessionRoot, `${SESSION_ID}.json`));
     assert.deepEqual(messages.map(({ role }) => role), ['user', 'assistant']);
+    await assert.rejects(
+      sessionCadSystem(sessionRoot, SESSION_ID, 'a3d-blender' as 'a3d-text'),
+      /different CAD system/u,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('legacy sessions without cadSystem keep the default and reject switching', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'amagine-legacy-cad-system-'));
+  const sessionRoot = join(root, 'sessions');
+  try {
+    await mkdir(sessionRoot, { recursive: true });
+    await writeFile(
+      join(sessionRoot, `${SESSION_ID}.json`),
+      `${JSON.stringify(
+        {
+          createdAt: '2026-01-01T00:00:00.000Z',
+          id: SESSION_ID,
+          messages: [
+            { id: 'msg-1', role: 'user', text: 'legacy without cadSystem' },
+          ],
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          version: 1,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    assert.equal(await sessionCadSystem(sessionRoot, SESSION_ID), 'a3d-text');
+    await assert.rejects(
+      sessionCadSystem(sessionRoot, SESSION_ID, 'a3d-blender' as 'a3d-text'),
+      /different CAD system/u,
+    );
+    await assert.rejects(
+      appendSessionUserMessage(
+        sessionRoot,
+        SESSION_ID,
+        'try switch',
+        'a3d-blender' as 'a3d-text',
+      ),
+      /already uses a different CAD system/u,
+    );
+
+    await appendSessionUserMessage(sessionRoot, SESSION_ID, 'still default');
+    const messages = await readSessionMessages(
+      join(sessionRoot, `${SESSION_ID}.json`),
+    );
+    assert.deepEqual(
+      messages.map(({ role }) => role),
+      ['user', 'user'],
+    );
   } finally {
     await rm(root, { force: true, recursive: true });
   }

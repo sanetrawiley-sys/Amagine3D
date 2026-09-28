@@ -57,6 +57,13 @@ test('serves the JSON contract through tRPC and removes the old REST API', async
     assert.equal(health.webSearchConfigured, false);
     assert.equal(health.webSearchEnabled, false);
     assert.equal(health.webSearchVerification, 'untested');
+    assert.deepEqual(Object.keys(health.cadSystems), ['a3d-text']);
+    assert.equal(health.cadSystems['a3d-text']?.ready, false);
+    assert.deepEqual(health.cadSystems['a3d-text']?.requirements, ['python']);
+    assert.equal(
+      health.cadSystems['a3d-text']?.error,
+      'Runtime unavailable in test.',
+    );
 
     const catalog = await client.sessions.catalog.query();
     assert.equal(catalog.initialSessionId, BUNDLED_POMODORO_SESSION_ID);
@@ -117,6 +124,11 @@ test('health reports search configuration without claiming provider verification
         webSearchEnabled ? 'codex-hosted' : 'disabled',
       );
       assert.equal(health.webSearchVerification, 'untested');
+      assert.equal(health.cadSystems['a3d-text']?.ready, false);
+      assert.equal(
+        health.cadSystems['a3d-text']?.error,
+        'Python CAD runtime is not ready.',
+      );
     }
   }
 });
