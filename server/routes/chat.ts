@@ -3,9 +3,11 @@ import { join } from 'node:path';
 
 import {
   agentRunTimeoutsFromEnv,
+  DEFAULT_CAD_SYSTEM,
   isRuntimeProgressEvent,
   type AgentRunTimeouts,
   type CadCompileProgressStatus,
+  type CadSystem,
   type CodexRuntimeLike,
   ModelOutputLimitError,
   type RunOutcome,
@@ -13,6 +15,7 @@ import {
   RunSupervisor,
   type RuntimeEvent,
   type RuntimeItem,
+  type RuntimeTaskType,
 } from '@amagine3d/a3d-runtime';
 import type { Express, Response } from 'express';
 
@@ -36,6 +39,7 @@ import {
   appendSessionAssistantTurn,
   appendSessionUserMessage,
   readSessionThreadId,
+  sessionCadSystem,
   setSessionThreadId,
   userSessionArtifacts,
 } from '../sessions.ts';
@@ -46,7 +50,33 @@ interface CompletedRun {
   sourceStepId?: string;
 }
 
+/**
+ * Optional host resources for one chat turn (for example a leased worker).
+ * The route always closes a returned lease after the turn settles, including
+ * failures and client disconnects. The public build opens no extra executor.
+ *
+ * If an opener throws or is cancelled after creating resources, it must
+ * clean them up before rejecting: the route only closes leases the opener
+ * successfully returns.
+ */
+export interface TurnExecutorLease {
+  close(): Promise<void> | void;
+}
+
+export interface TurnExecutorOpenContext {
+  cadSystem: CadSystem;
+  runtime: CodexRuntimeLike;
+  sessionId: string;
+  signal: AbortSignal;
+  taskType: RuntimeTaskType;
+}
+
+export type TurnExecutorOpener = (
+  context: TurnExecutorOpenContext,
+) => Promise<TurnExecutorLease | undefined> | TurnExecutorLease | undefined;
+
 export interface ChatRouteDependencies {
+  openTurnExecutor?: TurnExecutorOpener;
   python: PythonHealth;
   runtime: CodexRuntimeLike | undefined;
   runtimeError: string | undefined;
@@ -277,6 +307,7 @@ export function registerChatRoute(
     }
 
     const {
+      cadSystem: requestedCadSystem = DEFAULT_CAD_SYSTEM,
       images = [],
       message,
       sessionId,
@@ -293,6 +324,19 @@ export function registerChatRoute(
       response.status(409).json({
         message: 'This session already has an active turn.',
       });
+      return;
+    }
+
+    let cadSystem: typeof requestedCadSystem;
+    try {
+      cadSystem = await sessionCadSystem(
+        join(runtime.stateRoot, 'sessions'),
+        sessionId,
+        requestedCadSystem,
+      );
+    } catch (error) {
+      releaseSession();
+      response.status(409).json({ message: errorMessage(error) });
       return;
     }
 
@@ -475,6 +519,7 @@ export function registerChatRoute(
     };
     request.once('aborted', abortForDisconnect);
     response.once('close', abortForDisconnect);
+    let turnExecutor: TurnExecutorLease | undefined;
 
     try {
       startStep(
@@ -498,14 +543,30 @@ export function registerChatRoute(
           join(runtime.stateRoot, 'sessions'),
           sessionId,
           message,
+          cadSystem,
         ),
       );
       const sessionRoot = join(runtime.stateRoot, 'sessions');
       const threadId = await supervisor.run(() =>
         readSessionThreadId(sessionRoot, sessionId),
       );
+      turnExecutor = await supervisor.run(async (signal) => {
+        // Take ownership before assertRunning can discard a lease that the
+        // opener returned after the client already disconnected.
+        turnExecutor = await Promise.resolve(
+          dependencies.openTurnExecutor?.({
+            cadSystem,
+            runtime,
+            sessionId,
+            signal,
+            taskType,
+          }),
+        );
+        return turnExecutor;
+      });
       const result = await supervisor.run((signal) =>
         runtime.runTurn({
+          cadSystem,
           imagePaths: savedImages.map(({ path }) => path),
           message,
           onEvent: observeCodexEvent,
@@ -551,6 +612,13 @@ export function registerChatRoute(
         );
       }
     } finally {
+      try {
+        await turnExecutor?.close();
+      } catch (error) {
+        console.error(
+          `Could not close turn executor: ${errorMessage(error)}`,
+        );
+      }
       request.off('aborted', abortForDisconnect);
       response.off('close', abortForDisconnect);
       await supervisor.finalize(

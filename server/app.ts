@@ -5,14 +5,17 @@ import { createExpressMiddleware } from '@trpc/server/adapters/express';
 import express, { type Express } from 'express';
 
 import { registerArtifactRoutes } from './routes/artifacts.ts';
-import { registerChatRoute } from './routes/chat.ts';
+import { registerChatRoute, type TurnExecutorOpener } from './routes/chat.ts';
 import type { TrpcContext } from './trpc/context.ts';
 import { appRouter } from './trpc/router.ts';
 
-export type AppDependencies = TrpcContext;
+export type AppDependencies = TrpcContext & {
+  openTurnExecutor?: TurnExecutorOpener;
+};
 
 export function createApp(dependencies: AppDependencies): Express {
-  const { paths, python, runtime, runtimeError } = dependencies;
+  const { openTurnExecutor, paths, python, runtime, runtimeError } =
+    dependencies;
   const app = express();
   app.disable('x-powered-by');
   app.use((_request, response, next) => {
@@ -31,7 +34,12 @@ export function createApp(dependencies: AppDependencies): Express {
     }),
   );
   registerArtifactRoutes(app, paths);
-  registerChatRoute(app, { python, runtime, runtimeError });
+  registerChatRoute(app, {
+    openTurnExecutor,
+    python,
+    runtime,
+    runtimeError,
+  });
 
   if (existsSync(paths.distPath)) {
     app.use(express.static(paths.distPath));

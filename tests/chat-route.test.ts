@@ -13,6 +13,7 @@ import {
 import express from 'express';
 
 import { registerChatRoute } from '../server/routes/chat.ts';
+import { createApp } from '../server/app.ts';
 import {
   readSessionMessages,
   readSessionThreadId,
@@ -492,4 +493,359 @@ test('surfaces max_output_tokens as an incomplete model turn instead of completi
     });
     await rm(root, { force: true, recursive: true });
   }
+});
+
+test('createApp forwards an optional turn executor into the chat route', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'amagine-create-app-lease-'));
+  const sessionRoot = join(root, 'state', 'sessions');
+  const workspaceRoot = join(root, 'workspace');
+  await Promise.all([
+    mkdir(sessionRoot, { recursive: true }),
+    mkdir(join(workspaceRoot, 'sessions', SESSION_ID), { recursive: true }),
+  ]);
+  let openCalls = 0;
+  let closeCalls = 0;
+  const runtime: CodexRuntimeLike = {
+    configured: true,
+    modelName: 'openai/test-model',
+    runtimeReady: true,
+    searchBackend: 'disabled',
+    skillDiagnostics: [],
+    skills: [],
+    stateRoot: join(root, 'state'),
+    webSearchEnabled: false,
+    workspaceRoot,
+    runTurn: async () => ({ finalResponse: 'ok', threadId: 'thread-1' }),
+  };
+  const app = createApp({
+    openTurnExecutor: () => {
+      openCalls += 1;
+      return {
+        close: () => {
+          closeCalls += 1;
+        },
+      };
+    },
+    paths: {
+      bundledPomodoroRoot: join(root, 'bundled'),
+      distPath: join(root, 'missing-dist'),
+      projectRoot: root,
+      sessionRoot,
+      workspaceRoot,
+    },
+    python: { executable: null, ready: false, version: null },
+    runtime,
+    runtimeError: undefined,
+  });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  try {
+    const { port } = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${String(port)}/api/chat`, {
+      body: JSON.stringify({
+        message: '解释 BRep',
+        sessionId: SESSION_ID,
+        taskType: 'chat',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    });
+    const events = (await response.text())
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as AgentEvent);
+    assert.equal(response.status, 200);
+    assert.equal(events.at(-1)?.type, 'complete');
+    assert.equal(openCalls, 1);
+    assert.equal(closeCalls, 1);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+async function withChatServer(
+  root: string,
+  dependencies: Parameters<typeof registerChatRoute>[1],
+  run: (baseUrl: string) => Promise<void>,
+): Promise<void> {
+  const app = express();
+  app.use(express.json());
+  registerChatRoute(app, dependencies);
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  try {
+    const { port } = server.address() as AddressInfo;
+    await run(`http://127.0.0.1:${String(port)}`);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+    await rm(root, { force: true, recursive: true });
+  }
+}
+
+function postChat(baseUrl: string, body: Record<string, unknown>): Promise<Response> {
+  return fetch(`${baseUrl}/api/chat`, {
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  });
+}
+
+test('closes a lease returned during open when the client disconnects mid-open', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'amagine-turn-lease-open-abort-'));
+  await mkdir(join(root, 'workspace', 'sessions', SESSION_ID), {
+    recursive: true,
+  });
+  let closeCalls = 0;
+  let sawOpenStart = false;
+  let runCalls = 0;
+  const runtime: CodexRuntimeLike = {
+    configured: true,
+    modelName: 'openai/test-model',
+    runtimeReady: true,
+    searchBackend: 'disabled',
+    skillDiagnostics: [],
+    skills: [],
+    stateRoot: join(root, 'state'),
+    webSearchEnabled: false,
+    workspaceRoot: join(root, 'workspace'),
+    runTurn: async () => {
+      runCalls += 1;
+      return { finalResponse: 'late', threadId: 'thread-1' };
+    },
+  };
+  await withChatServer(
+    root,
+    {
+      openTurnExecutor: async () => {
+        sawOpenStart = true;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return {
+          close: () => {
+            closeCalls += 1;
+          },
+        };
+      },
+      python: { executable: null, ready: false, version: null },
+      runtime,
+      runtimeError: undefined,
+    },
+    async (baseUrl) => {
+      const controller = new AbortController();
+      const responsePromise = fetch(`${baseUrl}/api/chat`, {
+        body: JSON.stringify({
+          message: '长任务',
+          sessionId: SESSION_ID,
+          taskType: 'chat',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        signal: controller.signal,
+      }).catch(() => undefined);
+      const deadline = Date.now() + 3_000;
+      while (!sawOpenStart && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.equal(sawOpenStart, true);
+      controller.abort();
+      await responsePromise;
+      while (closeCalls < 1 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.equal(closeCalls, 1);
+      assert.equal(runCalls, 0);
+    },
+  );
+});
+
+test('opens and closes a turn executor lease around a successful turn', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'amagine-turn-lease-ok-'));
+  await mkdir(join(root, 'workspace', 'sessions', SESSION_ID), {
+    recursive: true,
+  });
+  let closeCalls = 0;
+  let openCalls = 0;
+  const runtime: CodexRuntimeLike = {
+    configured: true,
+    modelName: 'openai/test-model',
+    runtimeReady: true,
+    searchBackend: 'disabled',
+    skillDiagnostics: [],
+    skills: [],
+    stateRoot: join(root, 'state'),
+    webSearchEnabled: false,
+    workspaceRoot: join(root, 'workspace'),
+    runTurn: async (request) => {
+      assert.equal(request.taskType, 'chat');
+      return { finalResponse: 'ok', threadId: 'thread-1' };
+    },
+  };
+  await withChatServer(
+    root,
+    {
+      openTurnExecutor: (context) => {
+        openCalls += 1;
+        assert.equal(context.cadSystem, 'a3d-text');
+        assert.equal(context.sessionId, SESSION_ID);
+        assert.equal(context.taskType, 'chat');
+        assert.equal(context.runtime, runtime);
+        return {
+          close: () => {
+            closeCalls += 1;
+          },
+        };
+      },
+      python: { executable: null, ready: false, version: null },
+      runtime,
+      runtimeError: undefined,
+    },
+    async (baseUrl) => {
+      const response = await postChat(baseUrl, {
+        message: '解释 BRep',
+        sessionId: SESSION_ID,
+        taskType: 'chat',
+      });
+      const events = (await response.text())
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as AgentEvent);
+      assert.equal(response.status, 200);
+      assert.equal(events.at(-1)?.type, 'complete');
+      assert.equal(openCalls, 1);
+      assert.equal(closeCalls, 1);
+    },
+  );
+});
+
+test('closes the turn executor lease when the runtime turn fails', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'amagine-turn-lease-fail-'));
+  await mkdir(join(root, 'workspace', 'sessions', SESSION_ID), {
+    recursive: true,
+  });
+  let closeCalls = 0;
+  const runtime: CodexRuntimeLike = {
+    configured: true,
+    modelName: 'openai/test-model',
+    runtimeReady: true,
+    searchBackend: 'disabled',
+    skillDiagnostics: [],
+    skills: [],
+    stateRoot: join(root, 'state'),
+    webSearchEnabled: false,
+    workspaceRoot: join(root, 'workspace'),
+    runTurn: async () => {
+      throw new Error('worker exploded');
+    },
+  };
+  await withChatServer(
+    root,
+    {
+      openTurnExecutor: () => ({
+        close: () => {
+          closeCalls += 1;
+        },
+      }),
+      python: { executable: null, ready: false, version: null },
+      runtime,
+      runtimeError: undefined,
+    },
+    async (baseUrl) => {
+      const response = await postChat(baseUrl, {
+        message: '继续建模',
+        sessionId: SESSION_ID,
+        taskType: 'chat',
+      });
+      const events = (await response.text())
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as AgentEvent);
+      assert.equal(events.at(-1)?.type, 'error');
+      assert.equal(closeCalls, 1);
+    },
+  );
+});
+
+test('closes the turn executor lease when the client disconnects mid-turn', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'amagine-turn-lease-abort-'));
+  await mkdir(join(root, 'workspace', 'sessions', SESSION_ID), {
+    recursive: true,
+  });
+  let closeCalls = 0;
+  let signalAborted = false;
+  let sawTurnStarted = false;
+  const runtime: CodexRuntimeLike = {
+    configured: true,
+    modelName: 'openai/test-model',
+    runtimeReady: true,
+    searchBackend: 'disabled',
+    skillDiagnostics: [],
+    skills: [],
+    stateRoot: join(root, 'state'),
+    webSearchEnabled: false,
+    workspaceRoot: join(root, 'workspace'),
+    runTurn: async (request) => {
+      sawTurnStarted = true;
+      request.signal?.addEventListener(
+        'abort',
+        () => {
+          signalAborted = true;
+        },
+        { once: true },
+      );
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, 2_000);
+        request.signal?.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            reject(new Error('aborted'));
+          },
+          { once: true },
+        );
+      });
+      return { finalResponse: 'late', threadId: 'thread-1' };
+    },
+  };
+  await withChatServer(
+    root,
+    {
+      openTurnExecutor: () => ({
+        close: () => {
+          closeCalls += 1;
+        },
+      }),
+      python: { executable: null, ready: false, version: null },
+      runtime,
+      runtimeError: undefined,
+    },
+    async (baseUrl) => {
+      const controller = new AbortController();
+      const responsePromise = fetch(`${baseUrl}/api/chat`, {
+        body: JSON.stringify({
+          message: '长任务',
+          sessionId: SESSION_ID,
+          taskType: 'chat',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        signal: controller.signal,
+      }).catch(() => undefined);
+      const deadline = Date.now() + 3_000;
+      while (!sawTurnStarted && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.equal(sawTurnStarted, true);
+      controller.abort();
+      await responsePromise;
+      while (closeCalls < 1 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.equal(signalAborted, true);
+      assert.equal(closeCalls, 1);
+    },
+  );
 });
