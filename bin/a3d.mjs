@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { runSearchCommand } from './a3d-search.mjs';
 
@@ -317,11 +317,12 @@ function rejectReplay(match) {
   process.exit(3);
 }
 
-function help() {
+function help(usageLines = []) {
+  const extraUsage = usageLines.length > 0 ? `${usageLines.join('\n')}\n\n` : '';
   console.log(`a3d — Amagine3D CAD command line
 
 Usage:
-  a3d capabilities [--symbol NAME]... (query related symbols together)
+${extraUsage}  a3d capabilities [--symbol NAME]... (query related symbols together)
   a3d diagnose COMPILE_RESULT.json [--id ID | --code CODE | --severity LEVEL] [--offset N --limit N]
   a3d diagnose COMPILE_RESULT.json --id ID --field FIELD [--offset N --limit N]
   a3d diagnose COMPILE_RESULT.json [selectors] [--field FIELD] --full
@@ -358,6 +359,105 @@ function fail(message) {
   console.error(message);
   process.exit(2);
 }
+
+/**
+ * Optional CLI extension for additional local commands.
+ *
+ * Resolution order:
+ *   1. `AMAGINE3D_CLI_EXTENSION` (absolute, or relative to the project root)
+ *   2. `<projectRoot>/extensions/cli/index.mjs` when present
+ *
+ * A missing default path is a silent no-op so public installs keep today's
+ * help and unknown-command behavior. An explicit env path that does not
+ * exist is an error.
+ *
+ * The module must export `register(context)` (or default-export it) and may
+ * return:
+ *   {
+ *     commands?: Record<string, string>,
+ *       // command name -> Python script path (absolute, or relative to projectRoot)
+ *     guides?: Record<string, string>,
+ *     handlers?: Record<string, (args: string[]) => number | void | Promise<number | void>>,
+ *     help?: string[],
+ *       // full Usage lines, already indented with two spaces
+ *   }
+ *
+ * Extension entries cannot replace public commands, built-in CLI
+ * subcommands, or existing guides: colliding names are dropped before
+ * dispatch. Handler exit codes become process.exitCode when returned as a
+ * number.
+ */
+async function loadCliExtension() {
+  const explicit = process.env.AMAGINE3D_CLI_EXTENSION?.trim();
+  const path = explicit
+    ? (isAbsolute(explicit) ? explicit : resolve(projectRoot, explicit))
+    : join(projectRoot, 'extensions', 'cli', 'index.mjs');
+  if (!existsSync(path)) {
+    if (explicit) fail(`AMAGINE3D_CLI_EXTENSION not found: ${path}`);
+    return { commands: {}, guides: {}, handlers: {}, help: [] };
+  }
+  let module;
+  try {
+    module = await import(pathToFileURL(path).href);
+  } catch (error) {
+    fail(`Could not load a3d CLI extension at ${path}: ${error.message}`);
+  }
+  const register = module.register ?? module.default;
+  if (typeof register !== 'function') {
+    fail(`a3d CLI extension at ${path} must export register(context).`);
+  }
+  const contributions = (await register({
+    projectRoot,
+    python,
+    runtimeRoot,
+    skillRoot,
+  })) ?? {};
+  return {
+    commands: Object.fromEntries(
+      Object.entries(contributions.commands ?? {}).map(([name, script]) => [
+        name,
+        isAbsolute(script) ? script : resolve(projectRoot, script),
+      ]),
+    ),
+    guides: { ...contributions.guides },
+    handlers: { ...contributions.handlers },
+    help: Array.isArray(contributions.help) ? [...contributions.help] : [],
+  };
+}
+
+const extension = await loadCliExtension();
+const reservedCommandNames = new Set([
+  'diagnose',
+  'guide',
+  'search',
+  'help',
+  '--help',
+  '-h',
+  ...Object.keys(commands),
+]);
+const extensionCommands = Object.fromEntries(
+  Object.entries(extension.commands).filter(
+    ([name]) => !reservedCommandNames.has(name),
+  ),
+);
+const extensionGuides = Object.fromEntries(
+  Object.entries(extension.guides).filter(
+    ([name]) => !Object.hasOwn(guides, name),
+  ),
+);
+const extensionHandlers = Object.fromEntries(
+  Object.entries(extension.handlers).filter(
+    ([name, handler]) =>
+      !reservedCommandNames.has(name) && typeof handler === 'function',
+  ),
+);
+for (const [name, script] of Object.entries(extensionCommands)) {
+  commands[name] = script;
+}
+for (const [name, text] of Object.entries(extensionGuides)) {
+  guides[name] = text;
+}
+const extensionHelp = extension.help;
 
 const DIAGNOSTIC_BUDGET = 12_000;
 const DIAGNOSTIC_PAGE_SIZE = 5;
@@ -578,7 +678,7 @@ function diagnose(args) {
 
 const [command, ...args] = process.argv.slice(2);
 if (!command || command === 'help' || command === '--help' || command === '-h') {
-  help();
+  help(extensionHelp);
   process.exit(0);
 }
 if (command === 'guide') {
@@ -587,7 +687,7 @@ if (command === 'guide') {
     console.log(`Available a3d guides: ${Object.keys(guides).join(', ')}`);
     process.exit(0);
   }
-  if (!(topic in guides) || args.length > 1) {
+  if (!Object.hasOwn(guides, topic) || args.length > 1) {
     console.error(`Unknown a3d guide: ${args.join(' ')}`);
     console.error(`Available guides: ${Object.keys(guides).join(', ')}`);
     process.exit(2);
@@ -598,13 +698,18 @@ if (command === 'guide') {
 if (command === 'search') {
   process.exitCode = await runSearchCommand(args);
 } else {
+  if (Object.hasOwn(extensionHandlers, command)) {
+    const result = await extensionHandlers[command](args);
+    if (typeof result === 'number') process.exitCode = result;
+    process.exit(process.exitCode ?? 0);
+  }
   if (command === 'diagnose') {
     diagnose(args);
     process.exit(0);
   }
-  if (!(command in commands)) {
+  if (!Object.hasOwn(commands, command)) {
     console.error(`Unknown a3d command: ${command}`);
-    help();
+    help(extensionHelp);
     process.exit(2);
   }
   if (!existsSync(python)) {
@@ -619,7 +724,10 @@ if (command === 'search') {
   const replay = admissionReplay(command, args);
   if (replay) rejectReplay(replay);
 
-  const scriptArgs = [join(runtimeRoot, commands[command]), ...args];
+  const commandScript = Object.hasOwn(extensionCommands, command)
+    ? commands[command]
+    : join(runtimeRoot, commands[command]);
+  const scriptArgs = [commandScript, ...args];
   if (workspaceCommands.has(command)) scriptArgs.push('--workspace', process.cwd());
   const child = spawn(python, scriptArgs, {
     cwd: process.cwd(),

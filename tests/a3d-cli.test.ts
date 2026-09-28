@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -302,6 +302,201 @@ test('serves every advertised modeling guide', async () => {
       topic,
     ]);
     assert.ok(stdout.trim(), `${topic} guide is empty`);
+  }
+});
+
+test('public help stays free of extension usage without a CLI extension', async () => {
+  const { stdout } = await execFileAsync(process.execPath, [A3D.pathname, 'help']);
+
+  assert.match(stdout, /a3d compile SCENE\.json/u);
+  assert.doesNotMatch(stdout, /blender-shell/u);
+  assert.doesNotMatch(stdout, /orca-export/u);
+});
+
+test('registers optional CLI extension commands, guides, and handlers', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'amagine-a3d-cli-ext-'));
+  const extensionPath = join(root, 'extension.mjs');
+  const scriptPath = join(root, 'echo_extension.py');
+  try {
+    await writeFile(
+      extensionPath,
+      `export function register(context) {
+  if (!context.projectRoot || !context.runtimeRoot) throw new Error('missing context');
+  return {
+    commands: { 'echo-extension': ${JSON.stringify(scriptPath)} },
+    guides: { 'extension-guide': 'Extension guide body' },
+    handlers: {
+      'extension-handler': (args) => {
+        console.log(['handler', ...args].join(' '));
+        return 0;
+      },
+    },
+    help: ['  a3d extension-handler ARG'],
+  };
+}
+`,
+    );
+    await writeFile(scriptPath, 'print("script-ok")\n');
+
+    const environment = {
+      ...process.env,
+      AMAGINE3D_CLI_EXTENSION: extensionPath,
+      AMAGINE3D_PYTHON: POSIX_TRUE,
+    };
+
+    const help = await execFileAsync(process.execPath, [A3D.pathname, 'help'], {
+      env: environment,
+    });
+    assert.match(help.stdout, /a3d extension-handler ARG/u);
+    assert.match(help.stdout, /a3d compile SCENE\.json/u);
+
+    const guideList = await execFileAsync(process.execPath, [A3D.pathname, 'guide'], {
+      env: environment,
+    });
+    assert.match(guideList.stdout, /extension-guide/u);
+
+    const guide = await execFileAsync(process.execPath, [
+      A3D.pathname,
+      'guide',
+      'extension-guide',
+    ], { env: environment });
+    assert.match(guide.stdout, /Extension guide body/u);
+
+    const handler = await execFileAsync(process.execPath, [
+      A3D.pathname,
+      'extension-handler',
+      'alpha',
+    ], { env: environment });
+    assert.equal(handler.stdout.trim(), 'handler alpha');
+
+    // An extension python command is accepted by dispatch (managed Python
+    // check uses AMAGINE3D_PYTHON) without falling through to unknown-command.
+    const extensionCommand = await execFileAsync(process.execPath, [
+      A3D.pathname,
+      'echo-extension',
+    ], { env: environment });
+    assert.equal(extensionCommand.stdout, '');
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [A3D.pathname, 'echo-extension'], {
+        env: { ...environment, AMAGINE3D_PYTHON: join(root, 'missing-python') },
+      }),
+      (error: Error & { code?: number; stderr?: string }) => {
+        assert.equal(error.code, 2);
+        assert.match(error.stderr ?? '', /Managed Python is missing/u);
+        return true;
+      },
+    );
+
+    await writeFile(
+      extensionPath,
+      `export function register() {
+  return {
+    commands: { compile: ${JSON.stringify(scriptPath)} },
+    guides: { strategy: 'hijacked' },
+  };
+}
+`,
+    );
+    const protectedHelp = await execFileAsync(process.execPath, [A3D.pathname, 'help'], {
+      env: environment,
+    });
+    assert.match(protectedHelp.stdout, /a3d compile SCENE\.json/u);
+    const protectedGuide = await execFileAsync(process.execPath, [
+      A3D.pathname,
+      'guide',
+      'strategy',
+    ], { env: environment });
+    assert.doesNotMatch(protectedGuide.stdout, /hijacked/u);
+    assert.match(protectedGuide.stdout, /Geometry strategy/u);
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [A3D.pathname, 'help'], {
+        env: { ...process.env, AMAGINE3D_CLI_EXTENSION: join(root, 'missing.mjs') },
+      }),
+      (error: Error & { code?: number; stderr?: string }) => {
+        assert.equal(error.code, 2);
+        assert.match(error.stderr ?? '', /AMAGINE3D_CLI_EXTENSION not found/u);
+        return true;
+      },
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('same-name extension entries cannot change public command dispatch', {
+  skip: process.platform === 'win32',
+}, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'amagine-a3d-cli-conflict-'));
+  const extensionPath = join(root, 'extension.mjs');
+  const evilScript = join(root, 'evil.py');
+  const fakePython = join(root, 'fake-python.sh');
+  try {
+    await writeFile(evilScript, 'print("evil")\n');
+    await writeFile(fakePython, '#!/bin/sh\nprintf "%s\\n" "$1"\n');
+    await chmod(fakePython, 0o755);
+    await writeFile(
+      extensionPath,
+      `export function register() {
+  return {
+    commands: { compile: ${JSON.stringify(evilScript)} },
+    handlers: {
+      diagnose: () => {
+        console.log('HIJACK-DIAGNOSE');
+        return 0;
+      },
+    },
+  };
+}
+`,
+    );
+
+    const environment = {
+      ...process.env,
+      AMAGINE3D_CLI_EXTENSION: extensionPath,
+      AMAGINE3D_PYTHON: fakePython,
+    };
+
+    const compile = await execFileAsync(
+      process.execPath,
+      [A3D.pathname, 'compile', 'missing-scene.json'],
+      { env: environment },
+    );
+    const scriptArg = compile.stdout.trim();
+    assert.match(scriptArg, /cad_compile\.py$/u);
+    assert.equal(scriptArg.includes(evilScript), false);
+    assert.equal(scriptArg.startsWith('/'), true);
+
+    await writeFile(
+      join(root, 'result.json'),
+      JSON.stringify({
+        issues: [
+          { code: 'QA.EXAMPLE', id: 'example', severity: 'error', message: 'boom' },
+        ],
+        schema: 'evidence-cad-compile-result/v1',
+      }),
+    );
+    const diagnose = await execFileAsync(
+      process.execPath,
+      [A3D.pathname, 'diagnose', 'result.json'],
+      { cwd: root, env: environment },
+    );
+    assert.equal(diagnose.stdout.includes('HIJACK-DIAGNOSE'), false);
+    assert.equal(JSON.parse(diagnose.stdout).count, 1);
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [A3D.pathname, 'toString'], {
+        env: { ...process.env, AMAGINE3D_PYTHON: fakePython },
+      }),
+      (error: Error & { code?: number; stderr?: string }) => {
+        assert.equal(error.code, 2);
+        assert.match(error.stderr ?? '', /Unknown a3d command: toString/u);
+        return true;
+      },
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
   }
 });
 
