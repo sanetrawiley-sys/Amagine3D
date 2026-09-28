@@ -451,24 +451,79 @@ export function CadWorkbench({
     }, [activeParameterModel]);
 
     useEffect(() => {
+      const pollInterval = 30_000;
+      const backoffSteps = [30_000, 60_000, 120_000];
       let live = true;
+      let inFlight = false;
+      let failures = 0;
+      let lastSuccessAt = 0;
       let timer: number | undefined;
-      async function refresh() {
+
+      function clearTimer() {
+        if (timer === undefined) return;
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
+
+      function schedule(delay: number) {
+        clearTimer();
+        if (!live || document.hidden) return;
+        timer = window.setTimeout(() => {
+          timer = undefined;
+          void check();
+        }, delay);
+      }
+
+      function nextDelay() {
+        if (failures === 0) return pollInterval;
+        return backoffSteps[Math.min(failures, backoffSteps.length) - 1];
+      }
+
+      async function check() {
+        if (!live || inFlight) return;
+        clearTimer();
+        inFlight = true;
         try {
           const next = await fetchHealth();
           if (!live) return;
+          failures = 0;
+          lastSuccessAt = Date.now();
           setHealth(next);
           setHealthError(false);
         } catch {
-          if (live) setHealthError(true);
+          if (live) {
+            failures += 1;
+            setHealthError(true);
+          }
         } finally {
-          if (live) timer = window.setTimeout(refresh, 5_000);
+          inFlight = false;
+          if (live) schedule(nextDelay());
         }
       }
-      void refresh();
+
+      function resume() {
+        if (!live || document.hidden || inFlight) return;
+        const elapsed = Date.now() - lastSuccessAt;
+        if (elapsed >= pollInterval) {
+          void check();
+          return;
+        }
+        if (timer === undefined) schedule(pollInterval - elapsed);
+      }
+
+      function handleVisibilityChange() {
+        if (document.hidden) clearTimer();
+        else resume();
+      }
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('focus', resume);
+      void check();
       return () => {
         live = false;
-        if (timer !== undefined) window.clearTimeout(timer);
+        clearTimer();
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('focus', resume);
         abortRef.current?.abort();
       };
     }, []);
