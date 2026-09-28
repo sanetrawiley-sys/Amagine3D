@@ -17,6 +17,7 @@ import {
   codexPrompt,
   codexReasoningEffort,
   CodexRuntime,
+  DEFAULT_CAD_SYSTEM,
   ModelOutputLimitError,
   type RuntimeEvent,
 } from '../src/index.ts';
@@ -82,6 +83,10 @@ test('maps the existing model and reasoning environment to Codex', () => {
   assert.match(tavilyPrompt, /引用返回的 URL/u);
   assert.match(tavilyPrompt, /不可信的第三方内容/u);
   assert.doesNotMatch(tavilyPrompt, /原生联网搜索/u);
+  assert.equal(
+    codexPrompt('cad', '建模', 'disabled'),
+    codexPrompt('cad', '建模', 'disabled', DEFAULT_CAD_SYSTEM),
+  );
 });
 
 test('extracts only validated compile progress from cumulative and delta output', () => {
@@ -313,7 +318,15 @@ test('runs isolated threads and exposes only normalized runtime events', async (
 
     const startedThreadIds: string[] = [];
     const runtimeEvents: RuntimeEvent[] = [];
+    assert.deepEqual(runtime.skills, [
+      {
+        description:
+          'Create and validate printable 3D models with the project a3d CLI.',
+        name: 'a3d-text',
+      },
+    ]);
     const result = await runtime.runTurn({
+      cadSystem: 'a3d-text',
       imagePaths: ['/tmp/reference.png'],
       message: '创建支架',
       onEvent: (event) => {

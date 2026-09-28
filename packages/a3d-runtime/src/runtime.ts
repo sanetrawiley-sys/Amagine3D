@@ -10,6 +10,12 @@ import {
   type ThreadOptions,
 } from '@openai/codex-sdk';
 
+import {
+  cadSystemDescriptor,
+  DEFAULT_CAD_SYSTEM,
+  listCadSystems,
+  type CadSystem,
+} from './cad-systems.ts';
 import { CompileProgressExtractor } from './compile-progress.ts';
 import { normalizeThreadEvent, type RuntimeEvent } from './events.ts';
 import { createTavilySearchBroker } from './tavily-search-broker.ts';
@@ -23,6 +29,7 @@ export interface RuntimeSkillSummary {
 }
 
 export interface CodexTurnRequest {
+  cadSystem?: CadSystem;
   imagePaths: readonly string[];
   message: string;
   onEvent?: (event: RuntimeEvent) => Promise<void> | void;
@@ -137,7 +144,9 @@ export function codexPrompt(
   taskType: RuntimeTaskType,
   message: string,
   searchBackend: RuntimeSearchBackend,
+  cadSystem: CadSystem = DEFAULT_CAD_SYSTEM,
 ): string {
+  const descriptor = cadSystemDescriptor(cadSystem);
   const request = message.trim() || '请查看并分析上传的图片。';
   const taskInstruction =
     taskType === 'cad'
@@ -172,7 +181,11 @@ export function codexPrompt(
             ] : []),
           ].join('\n')
         : '本轮联网已关闭；使用用户提供的资料和本地文件，不要尝试通过其他工具联网。';
-  return [request, taskInstruction, searchInstruction].filter(Boolean).join('\n\n');
+  const systemInstruction =
+    taskType === 'cad' ? descriptor.systemInstruction ?? '' : '';
+  return [request, taskInstruction, systemInstruction, searchInstruction]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 export class CodexRuntime implements CodexRuntimeLike {
@@ -181,12 +194,15 @@ export class CodexRuntime implements CodexRuntimeLike {
   readonly runtimeReady = true;
   readonly searchBackend: RuntimeSearchBackend;
   readonly skillDiagnostics: readonly string[] = [];
-  readonly skills: readonly RuntimeSkillSummary[] = [
-    {
-      description: 'Create and validate printable 3D models with the project a3d CLI.',
-      name: 'a3d-text',
+  readonly skills: readonly RuntimeSkillSummary[] = listCadSystems().map(
+    (system) => {
+      const descriptor = cadSystemDescriptor(system);
+      return {
+        description: descriptor.description,
+        name: descriptor.id,
+      };
     },
-  ];
+  );
   readonly stateRoot: string;
   readonly webSearchEnabled: boolean;
   readonly workspaceRoot: string;
@@ -311,18 +327,21 @@ export class CodexRuntime implements CodexRuntimeLike {
     }
     environment.CODEX_HOME = codexHome;
     environment.AMAGINE3D_ROOT = this.projectRoot;
-    environment.AMAGINE3D_SKILL_DIR = join(
+    const descriptor = cadSystemDescriptor(request.cadSystem ?? DEFAULT_CAD_SYSTEM);
+    const skillDirectory = join(
       this.projectRoot,
       'skills',
-      'a3d-text',
+      descriptor.skillDirectoryName,
     );
-    environment.AMAGINE3D_RUNTIME_DIR = join(
+    const runtimeDirectory = join(
       this.projectRoot,
       'skills',
-      'a3d-public',
+      descriptor.runtimeDirectoryName,
     );
+    environment.AMAGINE3D_SKILL_DIR = skillDirectory;
+    environment.AMAGINE3D_RUNTIME_DIR = runtimeDirectory;
     environment.PYTHONPATH = [
-      environment.AMAGINE3D_RUNTIME_DIR,
+      runtimeDirectory,
       environment.PYTHONPATH ?? '',
     ]
       .filter(Boolean)
@@ -370,18 +389,10 @@ export class CodexRuntime implements CodexRuntimeLike {
         inherit: 'core',
         set: {
           AMAGINE3D_ROOT: this.projectRoot,
-          AMAGINE3D_SKILL_DIR: join(
-            this.projectRoot,
-            'skills',
-            'a3d-text',
-          ),
-          AMAGINE3D_RUNTIME_DIR: join(
-            this.projectRoot,
-            'skills',
-            'a3d-public',
-          ),
+          AMAGINE3D_SKILL_DIR: skillDirectory,
+          AMAGINE3D_RUNTIME_DIR: runtimeDirectory,
           PYTHONPATH: [
-            join(this.projectRoot, 'skills', 'a3d-public'),
+            runtimeDirectory,
             this.environment.PYTHONPATH ?? '',
           ]
             .filter(Boolean)
@@ -441,6 +452,7 @@ export class CodexRuntime implements CodexRuntimeLike {
           request.taskType,
           request.message,
           this.searchBackend,
+          request.cadSystem ?? DEFAULT_CAD_SYSTEM,
         ),
         type: 'text',
       },
